@@ -1,0 +1,7 @@
+## Copy this to local.properties and fill in your Supabase project values.
+## local.properties is git-ignored — never commit it.
+
+sdk.dir=/path/to/your/Android/sdk
+
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
