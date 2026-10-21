@@ -1,11 +1,22 @@
 package com.blockade.quoridor.ui.game
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -35,9 +46,34 @@ fun QuoridorBoard(
     val outline = MaterialTheme.colorScheme.outline
     val p0Color = MaterialTheme.colorScheme.tertiary
     val p1Color = MaterialTheme.colorScheme.secondary
-    val moveHighlight = primary.copy(alpha = 0.35f)
-    val wallColor = MaterialTheme.colorScheme.error
+        val wallColor = MaterialTheme.colorScheme.error
     val previewColor = wallColor.copy(alpha = 0.5f)
+
+    // Pawns glide between cells instead of jumping.
+    val pawnSpec = tween<Float>(durationMillis = 250, easing = FastOutSlowInEasing)
+    val p0Row by animateFloatAsState(state.players[0].row.toFloat(), pawnSpec, label = "p0row")
+    val p0Col by animateFloatAsState(state.players[0].col.toFloat(), pawnSpec, label = "p0col")
+    val p1Row by animateFloatAsState(state.players[1].row.toFloat(), pawnSpec, label = "p1row")
+    val p1Col by animateFloatAsState(state.players[1].col.toFloat(), pawnSpec, label = "p1col")
+    val pawnPos = listOf(p0Row to p0Col, p1Row to p1Col)
+
+    // The newest wall drops in; walls already on the board when it first appears stay put.
+    val lastWall = uiState.lastWall
+    val wallIn = remember { Animatable(1f) }
+    LaunchedEffect(lastWall, uiState.snapshot?.revision) {
+        if (lastWall != null) {
+            wallIn.snapTo(0f)
+            wallIn.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+        }
+    }
+
+    // Valid destinations pulse gently so they read as tappable.
+    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.5f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "pulseAlpha",
+    )
 
     Canvas(
         modifier = modifier
@@ -78,7 +114,7 @@ fun QuoridorBoard(
                 val top = r * (cell + gap)
                 val isHighlighted = uiState.validMoves.contains(QuoridorRules.Pos(r, c))
                 drawRoundRect(
-                    color = if (isHighlighted) moveHighlight else surface,
+                    color = if (isHighlighted) primary.copy(alpha = pulse) else surface,
                     topLeft = Offset(left, top),
                     size = Size(cell, cell),
                     cornerRadius = CornerRadius(4f),
@@ -98,8 +134,14 @@ fun QuoridorBoard(
         drawGoalRow(8, p1Color.copy(alpha = 0.15f), cell, gap)
 
         // Draw placed walls
-        for (w in state.walls.horizontal) drawWall(w, horizontal = true, cell, gap, wallColor)
-        for (w in state.walls.vertical) drawWall(w, horizontal = false, cell, gap, wallColor)
+        for (w in state.walls.horizontal) {
+            val isNew = lastWall != null && lastWall.horizontal && lastWall.pos == w
+            drawWall(w, horizontal = true, cell, gap, if (isNew) wallColor.copy(alpha = wallIn.value) else wallColor)
+        }
+        for (w in state.walls.vertical) {
+            val isNew = lastWall != null && !lastWall.horizontal && lastWall.pos == w
+            drawWall(w, horizontal = false, cell, gap, if (isNew) wallColor.copy(alpha = wallIn.value) else wallColor)
+        }
 
         // Draw preview wall
         uiState.wallPreview?.let { p ->
@@ -107,9 +149,9 @@ fun QuoridorBoard(
         }
 
         // Draw pawns
-        state.players.forEachIndexed { i, ps ->
-            val cx = ps.col * (cell + gap) + cell / 2f
-            val cy = ps.row * (cell + gap) + cell / 2f
+        pawnPos.forEachIndexed { i, (row, col) ->
+            val cx = col * (cell + gap) + cell / 2f
+            val cy = row * (cell + gap) + cell / 2f
             val r = cell * 0.35f
             drawCircle(color = if (i == 0) p0Color else p1Color, radius = r, center = Offset(cx, cy))
             drawCircle(color = Color.White.copy(alpha = 0.6f), radius = r * 0.45f, center = Offset(cx, cy))

@@ -1,7 +1,17 @@
 package com.blockade.quoridor.ui.game
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import com.blockade.quoridor.domain.rules.MoveRecord
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.DirectionsWalk
@@ -30,6 +40,7 @@ fun GameScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -61,9 +72,19 @@ fun GameScreen(
             // Controls
             ControlRow(state, vm)
 
-            if (!state.finished && state.gameState != null) {
-                TextButton(onClick = { vm.askResign(true) }) { Text("Resign") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!state.finished && state.gameState != null) {
+                    TextButton(onClick = { vm.askResign(true) }) { Text("Resign") }
+                }
+                IconButton(onClick = vm::toggleSound) {
+                    Icon(
+                        if (state.soundOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                        contentDescription = if (state.soundOn) "Mute" else "Unmute",
+                    )
+                }
             }
+
+            MoveHistoryPanel(state.history, state.myPlayerIndex)
 
             // Error
             state.error?.let {
@@ -110,6 +131,32 @@ private fun StatusBar(state: GameUiState, myPlayerIndex: Int) {
 
         // Opponent walls
         Text("Opp walls: ${gs.players[1 - myPlayerIndex].wallsLeft}", style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun MoveHistoryPanel(history: List<MoveRecord>, myIndex: Int) {
+    var open by remember { mutableStateOf(false) }
+    TextButton(onClick = { open = !open }) {
+        Text("Moves (${history.size})")
+        Icon(if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+    }
+    if (!open) return
+    val listState = rememberLazyListState()
+    LaunchedEffect(history.size) { if (history.isNotEmpty()) listState.animateScrollToItem(history.lastIndex) }
+    if (history.isEmpty()) {
+        Text("No moves yet", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().height(120.dp)) {
+        itemsIndexed(history) { i, m ->
+            val who = if (m.player == myIndex) "You" else "Opp"
+            Text(
+                "${i + 1}. $who: ${m.text}",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (i == history.lastIndex) FontWeight.Bold else FontWeight.Normal,
+            )
+        }
     }
 }
 

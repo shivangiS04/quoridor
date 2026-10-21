@@ -167,6 +167,8 @@ class GameRepository @Inject constructor(
         value?.let { runCatching { OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
 
     val activeRoomId = prefs.activeRoomId
+    val soundEnabled = prefs.soundEnabled
+    suspend fun setSoundEnabled(enabled: Boolean) = prefs.setSoundEnabled(enabled)
     suspend fun saveRoom(roomId: String) = prefs.saveRoom(roomId)
     suspend fun clearRoom() = prefs.clearRoom()
 }

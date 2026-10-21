@@ -6,8 +6,13 @@ import com.blockade.quoridor.data.repository.GameException
 import com.blockade.quoridor.data.repository.GameRepository
 import com.blockade.quoridor.domain.model.GameState
 import com.blockade.quoridor.domain.model.MatchSnapshot
+import com.blockade.quoridor.domain.rules.MoveHistory
+import com.blockade.quoridor.domain.rules.MoveRecord
+import com.blockade.quoridor.domain.rules.PlacedWall
 import com.blockade.quoridor.domain.rules.QuoridorRules
 import com.blockade.quoridor.domain.rules.QuoridorRules.Pos
+import com.blockade.quoridor.ui.sound.Sfx
+import com.blockade.quoridor.ui.sound.SoundPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,7 +40,11 @@ data class GameUiState(
     val error: String? = null,
     val nowMs: Long = System.currentTimeMillis(),
     val confirmResign: Boolean = false,
+    val history: List<MoveRecord> = emptyList(),
+    val soundOn: Boolean = true,
 ) {
+    /** The most recent wall placement, so the board can animate it in. */
+    val lastWall: PlacedWall? get() = history.lastOrNull()?.wall
     /** Seconds before the player on turn forfeits, or null when no timer applies. */
     val secondsLeft: Long? get() {
         val last = snapshot?.updatedAtMs ?: return null
@@ -53,6 +62,7 @@ data class GameUiState(
 @HiltViewModel
 class GameViewModel @Inject constructor(
     private val repo: GameRepository,
+    private val sound: SoundPlayer,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(GameUiState())
@@ -64,6 +74,7 @@ class GameViewModel @Inject constructor(
         if (this.roomId == roomId) return
         this.roomId = roomId
         _state.update { it.copy(myPlayerIndex = myPlayerIndex) }
+        repo.soundEnabled.onEach { on -> _state.update { it.copy(soundOn = on) } }.launchIn(viewModelScope)
         viewModelScope.launch { refresh(roomId) }
         repo.observeMatch(roomId)
             .onEach { updateSnapshot(it) }
@@ -84,15 +95,36 @@ class GameViewModel @Inject constructor(
             .onFailure { e -> _state.update { it.copy(error = e.message) } }
     }
 
+    fun toggleSound() {
+        viewModelScope.launch { repo.setSoundEnabled(!_state.value.soundOn) }
+    }
+
     private fun updateSnapshot(snap: MatchSnapshot) {
+        var effect: Sfx? = null
         _state.update { s ->
             // Ignore stale/duplicate deliveries (refresh and realtime can race).
-            if (s.snapshot != null && snap.revision < s.snapshot.revision) return@update s
+            if (s.snapshot != null && snap.revision <= s.snapshot.revision) return@update s
+            // Only diff consecutive revisions; after a gap the history simply skips the missed moves.
+            val record = s.snapshot
+                ?.takeIf { snap.revision == it.revision + 1 }
+                ?.let { MoveHistory.describe(it.state, snap.state) }
+            effect = when {
+                record == null -> null
+                snap.state.status == "finished" ->
+                    if (snap.state.winner == s.myPlayerIndex) Sfx.WIN else Sfx.LOSE
+                record.wall != null -> Sfx.WALL
+                else -> Sfx.MOVE
+            }
+            val history = if (record != null) s.history + record else s.history
             val moves = if (snap.state.currentTurn == s.myPlayerIndex)
                 QuoridorRules.getValidMoves(snap.state, s.myPlayerIndex)
             else emptyList()
-            s.copy(snapshot = snap, validMoves = moves, wallPreview = null, selectedCell = null, error = null)
+            s.copy(
+                snapshot = snap, validMoves = moves, wallPreview = null, selectedCell = null, error = null,
+                history = history,
+            )
         }
+        effect?.let { if (_state.value.soundOn) sound.play(it) }
     }
 
     fun toggleMode() = _state.update {
