@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.blockade.quoridor.data.repository.GameException
 import com.blockade.quoridor.data.repository.GameRepository
+import com.blockade.quoridor.domain.ai.AiDifficulty
+import com.blockade.quoridor.domain.ai.QuoridorAi
 import com.blockade.quoridor.domain.model.GameState
 import com.blockade.quoridor.domain.model.MatchSnapshot
 import com.blockade.quoridor.domain.rules.MoveHistory
@@ -14,6 +16,7 @@ import com.blockade.quoridor.domain.rules.QuoridorRules.Pos
 import com.blockade.quoridor.ui.sound.Sfx
 import com.blockade.quoridor.ui.sound.SoundPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +25,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 enum class InteractionMode { MOVE, WALL }
@@ -69,6 +73,38 @@ class GameViewModel @Inject constructor(
     val state = _state.asStateFlow()
 
     private var roomId: String? = null
+
+    // Single-player: set when playing the computer; the human is always player 0 and moves first.
+    private var ai: QuoridorAi? = null
+    private val isLocal get() = ai != null
+
+    fun initLocal(difficulty: AiDifficulty) {
+        if (ai != null) return
+        ai = QuoridorAi(difficulty)
+        _state.update { it.copy(myPlayerIndex = 0) }
+        repo.soundEnabled.onEach { on -> _state.update { it.copy(soundOn = on) } }.launchIn(viewModelScope)
+        updateSnapshot(MatchSnapshot(QuoridorRules.initialState(firstTurn = 0), revision = 0))
+    }
+
+    private fun applyLocal(pi: Int, action: QuoridorRules.Action) {
+        val snap = _state.value.snapshot ?: return
+        val next = QuoridorRules.apply(snap.state, pi, action)
+        if (next == null) {
+            _state.update { it.copy(error = "Invalid move") }
+            return
+        }
+        updateSnapshot(MatchSnapshot(next, snap.revision + 1))
+        if (next.status == "playing" && next.currentTurn != _state.value.myPlayerIndex) {
+            val engine = ai ?: return
+            viewModelScope.launch {
+                _state.update { it.copy(submitting = true) }
+                delay(500) // brief pause so the reply doesn't feel instant
+                val reply = withContext(Dispatchers.Default) { engine.choose(next, next.currentTurn) }
+                _state.update { it.copy(submitting = false) }
+                applyLocal(next.currentTurn, reply)
+            }
+        }
+    }
 
     fun init(roomId: String, myPlayerIndex: Int) {
         if (this.roomId == roomId) return
@@ -159,11 +195,14 @@ class GameViewModel @Inject constructor(
         }
     }
 
-    private fun submitMove(roomId: String, row: Int, col: Int) =
+    private fun submitMove(roomId: String, row: Int, col: Int) {
+        if (isLocal) return applyLocal(_state.value.myPlayerIndex, QuoridorRules.Action.Move(row, col))
         submit(roomId) { rev -> repo.submitMove(roomId, rev, row, col) }
+    }
 
     private fun submitWall(roomId: String, wr: Int, wc: Int, horizontal: Boolean) {
         _state.update { it.copy(wallPreview = null) }
+        if (isLocal) return applyLocal(_state.value.myPlayerIndex, QuoridorRules.Action.Wall(wr, wc, horizontal))
         submit(roomId) { rev -> repo.submitWall(roomId, rev, wr, wc, horizontal) }
     }
 
@@ -171,6 +210,12 @@ class GameViewModel @Inject constructor(
 
     fun resign(roomId: String) {
         _state.update { it.copy(confirmResign = false) }
+        if (isLocal) {
+            val snap = _state.value.snapshot ?: return
+            val me = _state.value.myPlayerIndex
+            updateSnapshot(MatchSnapshot(snap.state.copy(status = "finished", winner = 1 - me), snap.revision + 1))
+            return
+        }
         submit(roomId) { rev -> repo.resign(roomId, rev) }
     }
 
@@ -178,7 +223,7 @@ class GameViewModel @Inject constructor(
 
     fun leave(onDone: () -> Unit) {
         viewModelScope.launch {
-            repo.clearRoom()
+            if (!isLocal) repo.clearRoom() // a local game must not wipe the online game we could resume
             onDone()
         }
     }

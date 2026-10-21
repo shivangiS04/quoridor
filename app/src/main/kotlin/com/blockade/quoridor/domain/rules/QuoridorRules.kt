@@ -1,6 +1,8 @@
 package com.blockade.quoridor.domain.rules
 
 import com.blockade.quoridor.domain.model.GameState
+import com.blockade.quoridor.domain.model.PlayerState
+import com.blockade.quoridor.domain.model.WallsState
 import com.blockade.quoridor.domain.model.WallPos
 import kotlin.math.abs
 
@@ -136,5 +138,81 @@ object QuoridorRules {
             s.walls.copy(vertical = s.walls.vertical + WallPos(wr, wc))
         val specState = s.copy(walls = newWalls)
         return hasPath(specState, 0) && hasPath(specState, 1)
+    }
+
+    // ------------------------------------------------------------------
+    // Local play (single-player): the same rules the server applies in applyAction
+    // ------------------------------------------------------------------
+    sealed interface Action {
+        data class Move(val row: Int, val col: Int) : Action
+        data class Wall(val row: Int, val col: Int, val horizontal: Boolean) : Action
+    }
+
+    fun initialState(firstTurn: Int = 0) = GameState(
+        players = listOf(
+            PlayerState(BOARD - 1, BOARD / 2, WALLS_PER_PLAYER), // player 0 starts at the bottom, goal row 0
+            PlayerState(0, BOARD / 2, WALLS_PER_PLAYER),         // player 1 starts at the top, goal row 8
+        ),
+        walls = WallsState(),
+        currentTurn = firstTurn,
+        status = "playing",
+        winner = null,
+    )
+
+    fun goalRow(playerIndex: Int) = if (playerIndex == 0) 0 else BOARD - 1
+
+    /** Applies [action] for [pi] and returns the new state, or null if the action is illegal. */
+    fun apply(s: GameState, pi: Int, action: Action): GameState? {
+        if (s.status != "playing" || s.currentTurn != pi) return null
+        return when (action) {
+            is Action.Move -> {
+                if (getValidMoves(s, pi).none { it.row == action.row && it.col == action.col }) return null
+                val won = action.row == goalRow(pi)
+                s.copy(
+                    players = s.players.mapIndexed { i, p -> if (i == pi) p.copy(row = action.row, col = action.col) else p },
+                    currentTurn = 1 - pi,
+                    status = if (won) "finished" else "playing",
+                    winner = if (won) pi else null,
+                )
+            }
+            is Action.Wall -> {
+                if (!isWallValid(s, action.row, action.col, action.horizontal, pi)) return null
+                val pos = WallPos(action.row, action.col)
+                s.copy(
+                    players = s.players.mapIndexed { i, p -> if (i == pi) p.copy(wallsLeft = p.wallsLeft - 1) else p },
+                    walls = if (action.horizontal) s.walls.copy(horizontal = s.walls.horizontal + pos)
+                    else s.walls.copy(vertical = s.walls.vertical + pos),
+                    currentTurn = 1 - pi,
+                )
+            }
+        }
+    }
+
+    /** Shortest wall-respecting path (ignoring the other pawn) from the player to their goal row, start included. */
+    fun shortestPath(s: GameState, playerIndex: Int): List<Pos>? {
+        val p = s.players[playerIndex]
+        val goal = goalRow(playerIndex)
+        val start = Pos(p.row, p.col)
+        val parent = HashMap<Pos, Pos?>()
+        parent[start] = null
+        val queue = ArrayDeque<Pos>()
+        queue += start
+        while (queue.isNotEmpty()) {
+            val cur = queue.removeFirst()
+            if (cur.row == goal) {
+                val path = ArrayList<Pos>()
+                var at: Pos? = cur
+                while (at != null) { path += at; at = parent[at] }
+                return path.reversed()
+            }
+            for ((dr, dc) in listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)) {
+                val next = Pos(cur.row + dr, cur.col + dc)
+                if (!inBounds(next.row, next.col) || next in parent) continue
+                if (isMovementBlocked(s, cur, next)) continue
+                parent[next] = cur
+                queue += next
+            }
+        }
+        return null
     }
 }

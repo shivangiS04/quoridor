@@ -7,7 +7,7 @@ Every online move is validated server-side by an edge function; clients only rea
 
 | Path | What |
 |------|------|
-| `app/` | Android app (`domain/` rules + AI, `data/` Supabase client, `ui/` Compose screens) |
+| `app/` | Android app (`domain/rules` + `domain/ai`, `data/` Supabase client, `ui/` Compose screens) |
 | `supabase/migrations/` | Postgres schema + RLS |
 | `supabase/functions/` | Edge functions: `create-room`, `join-room`, `get-room`, `submit-action`, `cleanup-rooms` |
 | `supabase/functions/_shared/quoridor.ts` | Server-side rule engine (must stay in sync with `QuoridorRules.kt`) |
@@ -25,7 +25,7 @@ Every online move is validated server-side by an edge function; clients only rea
    ```
 5. Run the app: `./gradlew installDebug` (or press Run in Android Studio).
 
-Single-player (vs AI) needs no Supabase setup at all.
+Single-player (Easy / Medium / Hard computer opponent) runs fully on-device, but the app still expects the Supabase values in `local.properties` to build.
 
 ## Tests
 

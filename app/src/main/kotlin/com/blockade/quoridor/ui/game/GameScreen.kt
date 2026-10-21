@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.blockade.quoridor.domain.ai.AiDifficulty
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -29,11 +30,14 @@ fun GameScreen(
     roomId: String,
     myPlayerIndex: Int,
     onLeave: () -> Unit,
+    aiDifficulty: AiDifficulty? = null,
     vm: GameViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(roomId) { vm.init(roomId, myPlayerIndex) }
+    LaunchedEffect(roomId, aiDifficulty) {
+        if (aiDifficulty != null) vm.initLocal(aiDifficulty) else vm.init(roomId, myPlayerIndex)
+    }
 
     Scaffold { padding ->
         Column(
@@ -66,8 +70,8 @@ fun GameScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Turn timer / forfeit
-            TimerRow(state, onClaim = { vm.claimTimeout(roomId) })
+            // Turn timer / forfeit (online only)
+            if (aiDifficulty == null) TimerRow(state, onClaim = { vm.claimTimeout(roomId) })
 
             // Controls
             ControlRow(state, vm)
@@ -125,6 +129,7 @@ private fun StatusBar(state: GameUiState, myPlayerIndex: Int) {
         val turnText = when {
             state.finished -> if (state.winner == myPlayerIndex) "You win!" else "You lose"
             state.isMyTurn -> "Your turn"
+            state.submitting && state.snapshot?.updatedAtMs == null -> "Computer is thinking…"
             else -> "Opponent's turn"
         }
         Text(turnText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
