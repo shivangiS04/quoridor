@@ -6,9 +6,11 @@ import {
 } from "jsr:@std/assert@1";
 import {
   applyAction,
+  claimTimeout,
   GameState,
   getValidMoves,
   initialState,
+  TURN_TIMEOUT_MS,
   WallPos,
 } from "./quoridor.ts";
 
@@ -212,5 +214,42 @@ Deno.test("a wall that seals a player in is rejected", () => {
       applyAction(s, 0, { type: "wall", row: 7, col: 7, horizontal: false }),
     Error,
     "blocks a player's path",
+  );
+});
+
+Deno.test("resigning gives the win to the opponent, even off-turn", () => {
+  const s = applyAction(makeState({ turn: 1 }), 0, { type: "resign" });
+  assertEquals(s.status, "finished");
+  assertEquals(s.winner, 1);
+});
+
+Deno.test("timeout can only be claimed by the waiting player after the limit", () => {
+  const s = makeState({ turn: 1 });
+  const t0 = 1_000_000;
+  assertThrows(
+    () => claimTimeout(s, 1, t0, t0 + TURN_TIMEOUT_MS),
+    Error,
+    "your turn",
+  );
+  assertThrows(
+    () => claimTimeout(s, 0, t0, t0 + TURN_TIMEOUT_MS - 1),
+    Error,
+    "still has time",
+  );
+  const done = claimTimeout(s, 0, t0, t0 + TURN_TIMEOUT_MS);
+  assertEquals(done.status, "finished");
+  assertEquals(done.winner, 0);
+});
+
+Deno.test("timeout cannot be claimed on a finished match", () => {
+  const s = {
+    ...makeState({ turn: 1 }),
+    status: "finished" as const,
+    winner: 1,
+  };
+  assertThrows(
+    () => claimTimeout(s, 0, 0, TURN_TIMEOUT_MS * 2),
+    Error,
+    "not in progress",
   );
 });

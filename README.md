@@ -35,3 +35,14 @@ deno test supabase/functions           # server rule engine tests
 ```
 
 Both run in CI (`.github/workflows/ci.yml`).
+
+## Game rules enforced by the server
+
+- Every action is validated in `submit-action`; clients cannot write to `matches`.
+- A player may **resign** at any time.
+- A player idle for 2 minutes (`TURN_TIMEOUT_MS`) can be forfeited by the opponent via `claim-timeout`.
+- `cleanup-rooms` deletes rooms older than 24h. Set a secret and schedule it (e.g. hourly with pg_cron / a cron caller):
+  ```sh
+  supabase secrets set CLEANUP_SECRET=<random>
+  curl -X POST https://<ref>.supabase.co/functions/v1/cleanup-rooms -H "x-cleanup-secret: <random>"
+  ```

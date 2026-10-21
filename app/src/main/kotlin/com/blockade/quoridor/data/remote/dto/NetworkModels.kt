@@ -31,6 +31,7 @@ data class GetRoomResponse(
 data class MatchPayload(
     val state: kotlinx.serialization.json.JsonObject,
     val revision: Int,
+    @SerialName("updated_at") val updatedAt: String? = null,
 )
 
 @Serializable
@@ -60,4 +61,19 @@ data class WallAction(
     val row: Int,
     val col: Int,
     val horizontal: Boolean,
+)
+
+@Serializable
+data class ResignAction(val type: String = "resign")
+
+@Serializable
+data class SubmitResignRequest(
+    @SerialName("room_id") val roomId: String,
+    val revision: Int,
+    val action: ResignAction = ResignAction(),
+)
+
+@Serializable
+data class ClaimTimeoutRequest(
+    @SerialName("room_id") val roomId: String,
 )

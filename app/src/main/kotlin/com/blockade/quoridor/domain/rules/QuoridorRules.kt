@@ -10,6 +10,9 @@ object QuoridorRules {
     const val WALL_GRID = 8
     const val WALLS_PER_PLAYER = 10
 
+    /** Mirrors TURN_TIMEOUT_MS in supabase/functions/_shared/quoridor.ts. */
+    const val TURN_TIMEOUT_MS = 120_000L
+
     data class Pos(val row: Int, val col: Int)
 
     // ------------------------------------------------------------------

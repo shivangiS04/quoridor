@@ -23,6 +23,9 @@ fun NavGraph() {
                 onRoomJoined = { roomId, pi ->
                     nav.navigate("game/$roomId/$pi")
                 },
+                onResumeWaiting = { roomId, code ->
+                    nav.navigate("waiting/$roomId/$code")
+                },
             )
         }
 

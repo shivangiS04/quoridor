@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun HomeScreen(
     onRoomCreated: (roomId: String, code: String) -> Unit,
     onRoomJoined: (roomId: String, playerIndex: Int) -> Unit,
+    onResumeWaiting: (roomId: String, code: String) -> Unit,
     vm: HomeViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -33,6 +34,17 @@ fun HomeScreen(
         ) {
             Text("Quoridor", fontSize = 40.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(48.dp))
+
+            state.resume?.let { r ->
+                Button(
+                    onClick = {
+                        if (r.started) onRoomJoined(r.roomId, r.playerIndex) else onResumeWaiting(r.roomId, r.code)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Resume game") }
+                TextButton(onClick = vm::dismissResume) { Text("Forget this game") }
+                Spacer(Modifier.height(16.dp))
+            }
 
             Button(
                 onClick = { vm.hostGame(onRoomCreated) },

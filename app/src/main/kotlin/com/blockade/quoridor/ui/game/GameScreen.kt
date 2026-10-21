@@ -55,8 +55,15 @@ fun GameScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // Turn timer / forfeit
+            TimerRow(state, onClaim = { vm.claimTimeout(roomId) })
+
             // Controls
             ControlRow(state, vm)
+
+            if (!state.finished && state.gameState != null) {
+                TextButton(onClick = { vm.askResign(true) }) { Text("Resign") }
+            }
 
             // Error
             state.error?.let {
@@ -66,7 +73,17 @@ fun GameScreen(
 
             // Win dialog
             if (state.finished) {
-                WinDialog(winner = state.winner, myIndex = myPlayerIndex, onLeave = onLeave)
+                WinDialog(winner = state.winner, myIndex = myPlayerIndex, onLeave = { vm.leave(onLeave) })
+            }
+
+            if (state.confirmResign) {
+                AlertDialog(
+                    onDismissRequest = { vm.askResign(false) },
+                    title = { Text("Resign?") },
+                    text = { Text("Your opponent will win the game.") },
+                    confirmButton = { TextButton(onClick = { vm.resign(roomId) }) { Text("Resign") } },
+                    dismissButton = { TextButton(onClick = { vm.askResign(false) }) { Text("Keep playing") } },
+                )
             }
         }
     }
@@ -93,6 +110,21 @@ private fun StatusBar(state: GameUiState, myPlayerIndex: Int) {
 
         // Opponent walls
         Text("Opp walls: ${gs.players[1 - myPlayerIndex].wallsLeft}", style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun TimerRow(state: GameUiState, onClaim: () -> Unit) {
+    val left = state.secondsLeft ?: return
+    if (state.canClaimTimeout) {
+        Button(onClick = onClaim, enabled = !state.submitting) { Text("Opponent timed out — claim win") }
+    } else {
+        val who = if (state.isMyTurn) "Your" else "Opponent's"
+        Text(
+            "$who time left: ${left / 60}:${"%02d".format(left % 60)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
