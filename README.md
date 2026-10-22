@@ -115,3 +115,21 @@ Without a keystore, `assembleRelease` produces an *unsigned* APK that Android wi
 
 `docs/` contains the project homepage and the privacy policy (needed for Google sign-in in production). Publish them with
 GitHub Pages: Settings → Pages → *Deploy from a branch* → `main` → `/docs`. Replace `CONTACT_EMAIL_HERE` in both HTML files first.
+
+## Web version (`web/`)
+
+Play in the browser: React + Vite + TypeScript, deployed on Vercel. It uses an exact copy of the server's rules
+(`supabase/functions/_shared/quoridor.ts` -> `web/src/shared/quoridor.ts`; run `npm run sync-rules` after changing the
+rules, a test fails if the copy is stale), so the browser and the backend can never disagree.
+
+```sh
+cd web
+npm ci
+npm run dev            # http://localhost:5173
+npm test               # rules, computer opponent, geometry
+npm run build          # type-checks, then builds to web/dist
+node e2e/smoke.mjs http://127.0.0.1:4173 shots   # real-browser test against `npm run preview`
+```
+
+Status: play the computer (Easy / Medium / Hard) with tap-to-move and drag-and-drop walls. Sign-in, online rooms and the
+leaderboard use the same Supabase backend as the Android app and come next.

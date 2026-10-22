@@ -151,6 +151,62 @@ function hasPath(s: GameState, pi: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers shared with the web client (the computer opponent runs on the same rules).
+// ---------------------------------------------------------------------------
+
+/** The row a player must reach to win. */
+export function goalRow(pi: number): number {
+  return pi === 0 ? 0 : BOARD - 1;
+}
+
+/** Whether `pi` may place a wall at notch (wr, wc): has walls left, in bounds, no overlap, and no path is sealed. */
+export function isWallValid(
+  s: GameState,
+  pi: number,
+  wr: number,
+  wc: number,
+  horizontal: boolean,
+): boolean {
+  if (s.players[pi].walls_left <= 0) return false;
+  if (wr < 0 || wr >= WALL_GRID || wc < 0 || wc >= WALL_GRID) return false;
+  if (wallHasConflict(s, wr, wc, horizontal)) return false;
+  const walls: WallsState = horizontal
+    ? { horizontal: [...s.walls.horizontal, { row: wr, col: wc }], vertical: s.walls.vertical }
+    : { horizontal: s.walls.horizontal, vertical: [...s.walls.vertical, { row: wr, col: wc }] };
+  const spec: GameState = { ...s, walls };
+  return hasPath(spec, 0) && hasPath(spec, 1);
+}
+
+/** Shortest wall-respecting path (ignoring the other pawn) to the goal row, start included; null if sealed. */
+export function shortestPath(s: GameState, pi: number): Pos[] | null {
+  const p = s.players[pi];
+  const goal = goalRow(pi);
+  const key = (r: number, c: number) => r * BOARD + c;
+  const parent = new Map<number, number | null>([[key(p.row, p.col), null]]);
+  const queue: Pos[] = [{ row: p.row, col: p.col }];
+  for (let head = 0; head < queue.length; head++) {
+    const cur = queue[head];
+    if (cur.row === goal) {
+      const path: Pos[] = [];
+      let at: number | null = key(cur.row, cur.col);
+      while (at !== null) {
+        path.push({ row: Math.floor(at / BOARD), col: at % BOARD });
+        at = parent.get(at) ?? null;
+      }
+      return path.reverse();
+    }
+    for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as [number, number][]) {
+      const nr = cur.row + dr, nc = cur.col + dc;
+      if (!inBounds(nr, nc) || parent.has(key(nr, nc))) continue;
+      if (isMovementBlocked(s, cur, { row: nr, col: nc })) continue;
+      parent.set(key(nr, nc), key(cur.row, cur.col));
+      queue.push({ row: nr, col: nc });
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Apply action and return new state (throws on invalid action)
 // ---------------------------------------------------------------------------
 export function applyAction(
