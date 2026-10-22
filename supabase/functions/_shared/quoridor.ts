@@ -207,6 +207,20 @@ export function applyAction(
 }
 
 // ---------------------------------------------------------------------------
+// Who may act? Returns an error message, or null when `pi` may submit `action` now.
+// Moves and walls need your turn; resigning is allowed at any time while the match is on.
+// ---------------------------------------------------------------------------
+export function actionNotAllowedReason(
+  s: GameState,
+  pi: number,
+  action: { type: string },
+): string | null {
+  if (s.status !== "playing") return "Match is not in progress";
+  if (action.type !== "resign" && s.current_turn !== pi) return "Not your turn";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Turn timeout: `claimant` wins if it is the opponent's turn and they have been
 // idle for longer than TURN_TIMEOUT_MS. Throws when the claim is not valid yet.
 // ---------------------------------------------------------------------------
