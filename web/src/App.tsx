@@ -8,6 +8,7 @@ import { useAuth } from "./lib/auth.tsx";
 import { onlineConfigured } from "./lib/supabase.ts";
 import { GameScreen } from "./ui/GameScreen.tsx";
 import { Home } from "./ui/Home.tsx";
+import { HelpPage } from "./ui/Help.tsx";
 import { LeaderboardScreen } from "./ui/Leaderboard.tsx";
 import { ProfileScreen } from "./ui/Profile.tsx";
 import { ROOM_KEY, RoomScreen } from "./ui/Room.tsx";
@@ -20,7 +21,8 @@ type Screen =
   | { name: "pvp" }
   | { name: "room"; roomId: string; quick: boolean }
   | { name: "profile" }
-  | { name: "leaderboard" };
+  | { name: "leaderboard" }
+  | { name: "help" };
 
 /** Something that needs an account; remembered across the Google redirect. */
 type Intent = { type: "create" } | { type: "quick" } | { type: "join"; code: string };
@@ -108,6 +110,8 @@ export default function App() {
   switch (screen.name) {
     case "local":
       return <LocalGame key={screen.difficulty} difficulty={screen.difficulty} onHome={() => setScreen({ name: "home" })} />;
+    case "help":
+      return <HelpPage onBack={() => setScreen({ name: "home" })} />;
     case "pvp":
       return <PvPGame onHome={() => setScreen({ name: "home" })} />;
     case "room":
@@ -131,6 +135,7 @@ export default function App() {
           onResume={() => resumeId && enterRoom(resumeId)}
           onPlay={(difficulty) => setScreen({ name: "local", difficulty })}
           onPvP={() => setScreen({ name: "pvp" })}
+          onHelp={() => setScreen({ name: "help" })}
           onProfile={() => setScreen({ name: "profile" })}
           onLeaderboard={() => (auth.user ? setScreen({ name: "leaderboard" }) : setScreen({ name: "signin", reason: "Sign in to see the leaderboard." }))}
           onQuick={() => { setError(null); if (auth.user) void perform({ type: "quick" }); else setIntent({ type: "quick" }); }}

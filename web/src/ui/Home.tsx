@@ -12,6 +12,7 @@ interface Props {
   onJoin: (code: string) => void;
   onProfile: () => void;
   onLeaderboard: () => void;
+  onHelp: () => void;
   onSignIn: () => void;
   signedIn: boolean;
   guest: boolean;
@@ -53,6 +54,7 @@ export function Home(p: Props) {
         <h1>Quoridor</h1>
         <p className="muted">Race to the other side. Block your opponent with walls.</p>
         {p.stats && <CommunityBar stats={p.stats} />}
+        <button className="linklike" onClick={p.onHelp}>❔ How to play</button>
 
         <h3>Play the computer</h3>
         <div className="levels">

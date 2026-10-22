@@ -21,9 +21,38 @@ await page.goto(base);
 await page.screenshot({ path: `${shots}/1-home.png` });
 ok(await page.locator("h1").innerText() === "Quoridor", "home screen renders");
 
+// ---------------------------------------------------------------- the how-to-play guide
+await page.getByRole("button", { name: /How to play/ }).click();
+await page.getByRole("heading", { name: "How to play" }).waitFor();
+const guide = async () => (await page.locator(".help").textContent()) ?? "";
+let gt = await guide();
+for (const t of ["The goal", "On your turn", "Wall rules", "Jumping over the other pawn", "What the buttons and screens mean", "How to place a wall", "The game modes", "Quick tips", "Questions"])
+  ok(gt.includes(t), `the guide has the section "${t}"`);
+ok((await page.locator("svg.diagram").count()) >= 5, `the guide has pictures (${await page.locator("svg.diagram").count()} diagrams, each with a text description)`);
+ok((await page.locator("svg.diagram[aria-label]").count()) === (await page.locator("svg.diagram").count()), "every picture has an accessible description");
+ok(gt.includes("Easy") && gt.includes("Two players, one device") && gt.includes("Hard"), "the guide explains the computer levels and the two-player mode");
+// sections open and close
+const modes = page.locator("summary", { hasText: "The game modes" });
+await modes.click();
+ok(await page.locator(".help-sec", { has: modes }).evaluate((d) => d.open), "tapping a section heading opens it");
+const hasOnline = (await page.getByRole("button", { name: "Back" }).count()) >= 0 && gt.includes("Quick match");
+if (hasOnline) ok(gt.includes("Rematch") && gt.includes("Create room") && gt.includes("invite link") && gt.includes("Leaderboard"), "the online modes are explained (quick match, rooms, rematch, leaderboard)");
+await page.screenshot({ path: `${shots}/h1-guide.png`, fullPage: true });
+await page.getByRole("button", { name: "Back" }).click();
+await page.getByRole("button", { name: "Easy" }).waitFor();
+ok(true, "Back returns to the home screen");
+
 await page.getByRole("button", { name: "Easy" }).click();
 await page.waitForSelector("svg.board");
 await page.screenshot({ path: `${shots}/2-game.png` });
+// the guide also opens over a running game, without losing it
+await page.getByRole("button", { name: "How to play" }).click();
+await page.waitForSelector(".sheet[aria-label='How to play']");
+ok((await page.locator(".sheet").innerText()).includes("The goal"), "the ? button opens the guide over the game");
+await page.screenshot({ path: `${shots}/h2-guide-sheet.png` });
+await page.getByRole("button", { name: "Close" }).click();
+await page.waitForSelector(".sheet", { state: "detached" });
+ok((await page.locator("svg.board").count()) === 1 && (await page.locator(".strip").innerText()) === "No moves yet", "closing it returns to the same game");
 ok((await page.locator("rect.hint").count()) === 3, "three reachable cells are outlined at the start");
 ok((await page.locator(".card.active").innerText()).startsWith("You"), "your card is active at the start");
 
