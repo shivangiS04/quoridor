@@ -1,29 +1,51 @@
 package com.blockade.quoridor.ui.game
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import com.blockade.quoridor.domain.rules.MoveRecord
-import androidx.compose.material.icons.filled.GridOn
-import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.outlined.DirectionsWalk
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
-import com.blockade.quoridor.domain.ai.AiDifficulty
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.blockade.quoridor.domain.ai.AiDifficulty
+import com.blockade.quoridor.ui.components.GameBackground
+import com.blockade.quoridor.ui.game.components.ControlBar
+import com.blockade.quoridor.ui.game.components.GameStats
+import com.blockade.quoridor.ui.game.components.HintChip
+import com.blockade.quoridor.ui.game.components.Identity
+import com.blockade.quoridor.ui.game.components.MoveHistorySheet
+import com.blockade.quoridor.ui.game.components.PlayerCard
+import com.blockade.quoridor.ui.game.components.SecondaryActions
+import com.blockade.quoridor.ui.game.components.TurnPill
+import com.blockade.quoridor.ui.game.components.WinOverlay
+import com.blockade.quoridor.ui.game.components.wallsLeftOf
+import com.blockade.quoridor.ui.theme.Dimens
+import com.blockade.quoridor.ui.theme.GameTheme
 
 @Composable
 fun GameScreen(
@@ -34,213 +56,177 @@ fun GameScreen(
     vm: GameViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val c = GameTheme.colors
+    val haptic = LocalHapticFeedback.current
+    var showHistory by remember { mutableStateOf(false) }
 
     LaunchedEffect(roomId, aiDifficulty) {
         if (aiDifficulty != null) vm.initLocal(aiDifficulty) else vm.init(roomId, myPlayerIndex)
     }
 
-    Scaffold { padding ->
+    // Haptics: a light tick for a pawn move, a firmer one for a wall, and one for an illegal wall.
+    LaunchedEffect(state.history.size) {
+        state.history.lastOrNull()?.let {
+            haptic.performHapticFeedback(if (it.wall != null) HapticFeedbackType.LongPress else HapticFeedbackType.TextHandleMove)
+        }
+    }
+    LaunchedEffect(state.invalidFlash?.tick) {
+        if (state.invalidFlash != null) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    LaunchedEffect(state.error) {
+        if (state.error != null) {
+            kotlinx.coroutines.delay(2500)
+            vm.clearError()
+        }
+    }
+
+    val gs = state.gameState
+    val opponentName = if (state.vsComputer) "CPU" else "Opponent"
+
+    GameBackground {
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .systemBarsPadding()
+                .padding(horizontal = Dimens.screenPadding, vertical = Dimens.gapSmall),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Status row
-            StatusBar(state, myPlayerIndex)
-            Spacer(Modifier.height(8.dp))
-
-            // Board
-            val gs = state.gameState
+            // ---- HUD ----------------------------------------------------------------------
             if (gs != null) {
-                QuoridorBoard(
-                    state = gs,
-                    uiState = state,
-                    onCellTap = { r, c -> vm.onCellTap(roomId, r, c) },
-                    onWallSlotTap = { wr, wc -> vm.onWallSlotTap(roomId, wr, wc) },
-                    modifier = Modifier.padding(vertical = 4.dp),
-                )
-            } else {
-                Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // Turn timer / forfeit (online only)
-            if (aiDifficulty == null) TimerRow(state, onClaim = { vm.claimTimeout(roomId) })
-
-            // Controls
-            ControlRow(state, vm)
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!state.finished && state.gameState != null) {
-                    TextButton(onClick = { vm.askResign(true) }) { Text("Resign") }
-                }
-                IconButton(onClick = vm::toggleSound) {
-                    Icon(
-                        if (state.soundOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
-                        contentDescription = if (state.soundOn) "Mute" else "Unmute",
+                val me = state.myPlayerIndex
+                val thinking = state.vsComputer && !state.isMyTurn && !state.finished
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Dimens.gap)) {
+                    PlayerCard(
+                        name = "You", identity = Identity.YOU,
+                        color = c.player, colorDark = c.playerDark,
+                        wallsLeft = wallsLeftOf(gs, me),
+                        active = state.isMyTurn && !state.finished, thinking = false,
+                        modifier = Modifier.weight(1f),
+                    )
+                    PlayerCard(
+                        name = opponentName,
+                        identity = if (state.vsComputer) Identity.CPU else Identity.OPPONENT,
+                        color = c.opponent, colorDark = c.opponentDark,
+                        wallsLeft = wallsLeftOf(gs, 1 - me),
+                        active = !state.isMyTurn && !state.finished, thinking = thinking,
+                        modifier = Modifier.weight(1f),
                     )
                 }
-            }
-
-            MoveHistoryPanel(state.history, state.myPlayerIndex)
-
-            // Error
-            state.error?.let {
-                Spacer(Modifier.height(8.dp))
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-
-            // Win dialog
-            if (state.finished) {
-                WinDialog(winner = state.winner, myIndex = myPlayerIndex, onLeave = { vm.leave(onLeave) })
-            }
-
-            if (state.confirmResign) {
-                AlertDialog(
-                    onDismissRequest = { vm.askResign(false) },
-                    title = { Text("Resign?") },
-                    text = { Text("Your opponent will win the game.") },
-                    confirmButton = { TextButton(onClick = { vm.resign(roomId) }) { Text("Resign") } },
-                    dismissButton = { TextButton(onClick = { vm.askResign(false) }) { Text("Keep playing") } },
+                Spacer(Modifier.height(Dimens.gap))
+                TurnPill(
+                    label = when {
+                        state.finished -> "Game over"
+                        state.isMyTurn -> "Your Turn"
+                        state.vsComputer -> "CPU thinking"
+                        else -> "Opponent's turn"
+                    },
+                    color = if (state.isMyTurn && !state.finished) c.player else c.opponent,
+                    thinking = thinking,
                 )
             }
-        }
-    }
-}
 
-@Composable
-private fun StatusBar(state: GameUiState, myPlayerIndex: Int) {
-    val gs = state.gameState ?: return
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // My walls remaining
-        Text("Your walls: ${gs.players[myPlayerIndex].wallsLeft}", style = MaterialTheme.typography.labelLarge)
+            // ---- Board: the hero, centred in the space that's left ---------------------------
+            BoxWithConstraints(
+                Modifier.weight(1f).fillMaxWidth().padding(vertical = Dimens.gap),
+                contentAlignment = Alignment.Center,
+            ) {
+                val side = minOf(maxWidth, maxHeight)
+                if (gs != null) {
+                    QuoridorBoard(
+                        state = gs,
+                        uiState = state,
+                        onCellTap = { r, col -> vm.onCellTap(roomId, r, col) },
+                        onWallSlotTap = { wr, wc -> vm.onWallSlotTap(roomId, wr, wc) },
+                        modifier = Modifier.size(side),
+                    )
+                } else {
+                    CircularProgressIndicator(color = c.player)
+                }
+            }
 
-        // Turn indicator
-        val turnText = when {
-            state.finished -> if (state.winner == myPlayerIndex) "You win!" else "You lose"
-            state.isMyTurn -> "Your turn"
-            state.submitting && state.snapshot?.updatedAtMs == null -> "Computer is thinking…"
-            else -> "Opponent's turn"
-        }
-        Text(turnText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-
-        // Opponent walls
-        Text("Opp walls: ${gs.players[1 - myPlayerIndex].wallsLeft}", style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-@Composable
-private fun MoveHistoryPanel(history: List<MoveRecord>, myIndex: Int) {
-    var open by remember { mutableStateOf(false) }
-    TextButton(onClick = { open = !open }) {
-        Text("Moves (${history.size})")
-        Icon(if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
-    }
-    if (!open) return
-    val listState = rememberLazyListState()
-    LaunchedEffect(history.size) { if (history.isNotEmpty()) listState.animateScrollToItem(history.lastIndex) }
-    if (history.isEmpty()) {
-        Text("No moves yet", style = MaterialTheme.typography.bodySmall)
-        return
-    }
-    LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().height(120.dp)) {
-        itemsIndexed(history) { i, m ->
-            val who = if (m.player == myIndex) "You" else "Opp"
-            Text(
-                "${i + 1}. $who: ${m.text}",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = if (i == history.lastIndex) FontWeight.Bold else FontWeight.Normal,
+            // ---- Controls -----------------------------------------------------------------
+            val canAct = state.isMyTurn && !state.finished && !state.submitting
+            // One fixed-height slot for transient messages, so the board never shifts when they appear.
+            Box(Modifier.height(44.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (state.error != null) {
+                    HintChip(state.error ?: "", warning = true)
+                } else if (aiDifficulty == null) {
+                    TimerChip(state, onClaim = { vm.claimTimeout(roomId) })
+                }
+            }
+            HintChip(
+                when {
+                    state.finished -> "Game finished"
+                    !state.isMyTurn -> "Waiting for $opponentName…"
+                    state.mode == InteractionMode.MOVE -> "Tap a glowing dot to move"
+                    else -> "Tap a groove to preview a wall, tap again to place it"
+                },
+                modifier = Modifier.padding(bottom = Dimens.gapSmall),
+            )
+            ControlBar(
+                mode = state.mode,
+                wallHorizontal = state.wallHorizontal,
+                enabled = canAct,
+                onMode = { if (it != state.mode) vm.toggleMode() },
+                onRotate = vm::toggleWallOrientation,
+            )
+            Spacer(Modifier.height(Dimens.gapSmall))
+            SecondaryActions(
+                soundOn = state.soundOn,
+                canResign = gs != null && !state.finished,
+                historyCount = state.history.size,
+                onResign = { vm.askResign(true) },
+                onToggleSound = vm::toggleSound,
+                onHistory = { showHistory = true },
             )
         }
+
+        // ---- Overlays -------------------------------------------------------------------
+        if (state.finished) {
+            WinOverlay(
+                won = state.winner == state.myPlayerIndex,
+                winnerName = opponentName,
+                stats = GameStats(state.myTurnsTaken, state.wallsUsed, state.elapsedSeconds),
+                onPlayAgain = if (state.vsComputer) vm::restartLocal else null,
+                onHome = { vm.leave(onLeave) },
+            )
+        }
+        if (state.confirmResign) {
+            AlertDialog(
+                onDismissRequest = { vm.askResign(false) },
+                containerColor = c.surface,
+                titleContentColor = c.onSurface,
+                textContentColor = c.onSurfaceMuted,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(Dimens.sheetRadius),
+                title = { Text("Resign this game?") },
+                text = { Text("$opponentName will be declared the winner.") },
+                confirmButton = {
+                    Button(
+                        onClick = { vm.resign(roomId) },
+                        colors = ButtonDefaults.buttonColors(containerColor = c.invalid, contentColor = c.onSurface),
+                    ) { Text("Resign") }
+                },
+                dismissButton = { TextButton(onClick = { vm.askResign(false) }) { Text("Keep playing", color = c.onSurface) } },
+            )
+        }
+        if (showHistory) {
+            MoveHistorySheet(state.history, state.myPlayerIndex, opponentName, onDismiss = { showHistory = false })
+        }
     }
 }
 
+/** Online only: the idle-turn countdown, or the claim-win button once the opponent has timed out. */
 @Composable
-private fun TimerRow(state: GameUiState, onClaim: () -> Unit) {
+private fun TimerChip(state: GameUiState, onClaim: () -> Unit) {
     val left = state.secondsLeft ?: return
     if (state.canClaimTimeout) {
-        Button(onClick = onClaim, enabled = !state.submitting) { Text("Opponent timed out — claim win") }
+        Button(
+            onClick = onClaim,
+            enabled = !state.submitting,
+        ) { Text("Opponent timed out — claim win") }
     } else {
         val who = if (state.isMyTurn) "Your" else "Opponent's"
-        Text(
-            "$who time left: ${left / 60}:${"%02d".format(left % 60)}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        HintChip("$who time left: ${left / 60}:${"%02d".format(left % 60)}")
     }
-}
-
-@Composable
-private fun ControlRow(state: GameUiState, vm: GameViewModel) {
-    if (!state.isMyTurn || state.finished) return
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Mode toggle
-        FilterChip(
-            selected = state.mode == InteractionMode.MOVE,
-            onClick = { if (state.mode != InteractionMode.MOVE) vm.toggleMode() },
-            label = { Text("Move") },
-            leadingIcon = { Icon(Icons.Outlined.DirectionsWalk, null, Modifier.size(18.dp)) },
-        )
-        Spacer(Modifier.width(12.dp))
-        FilterChip(
-            selected = state.mode == InteractionMode.WALL,
-            onClick = { if (state.mode != InteractionMode.WALL) vm.toggleMode() },
-            label = { Text("Wall") },
-            leadingIcon = { Icon(Icons.Default.GridOn, null, Modifier.size(18.dp)) },
-        )
-
-        // Orientation toggle (only in wall mode)
-        if (state.mode == InteractionMode.WALL) {
-            Spacer(Modifier.width(16.dp))
-            IconButton(onClick = vm::toggleWallOrientation) {
-                Icon(
-                    Icons.Default.SwapVert,
-                    contentDescription = if (state.wallHorizontal) "Switch to vertical" else "Switch to horizontal",
-                )
-            }
-            Text(if (state.wallHorizontal) "H" else "V", style = MaterialTheme.typography.labelSmall)
-        }
-
-        if (state.submitting) {
-            Spacer(Modifier.width(16.dp))
-            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-        }
-    }
-    if (state.mode == InteractionMode.WALL) {
-        Text(
-            "Tap a wall slot to preview, tap again to place",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    } else {
-        Text(
-            "Tap a highlighted cell to move",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun WinDialog(winner: Int?, myIndex: Int, onLeave: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = {},
-        title = { Text(if (winner == myIndex) "You win!" else "You lose") },
-        text = { Text(if (winner == myIndex) "You reached the other side!" else "Your opponent got there first.") },
-        confirmButton = { TextButton(onClick = onLeave) { Text("Back to lobby") } },
-    )
 }

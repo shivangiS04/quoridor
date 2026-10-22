@@ -7,11 +7,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import com.blockade.quoridor.ui.components.GameBackground
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.blockade.quoridor.domain.ai.AiDifficulty
+import com.blockade.quoridor.ui.theme.GameTheme
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -25,7 +28,8 @@ fun HomeScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
-    Scaffold { padding ->
+    GameBackground {
+    Scaffold(containerColor = Color.Transparent) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -52,7 +56,14 @@ fun HomeScreen(
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AiDifficulty.entries.forEach { d ->
-                    FilledTonalButton(onClick = { onPlayComputer(d) }, modifier = Modifier.weight(1f)) {
+                    FilledTonalButton(
+                        onClick = { onPlayComputer(d) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = GameTheme.colors.surfaceHigh,
+                            contentColor = GameTheme.colors.onSurface,
+                        ),
+                    ) {
                         Text(d.label)
                     }
                 }
@@ -95,5 +106,6 @@ fun HomeScreen(
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
     }
 }

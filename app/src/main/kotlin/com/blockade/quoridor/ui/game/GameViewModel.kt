@@ -32,6 +32,9 @@ enum class InteractionMode { MOVE, WALL }
 
 data class WallPreview(val row: Int, val col: Int, val horizontal: Boolean)
 
+/** Presentation signal: the player tried an illegal wall here; [tick] changes on every attempt so the UI can re-animate. */
+data class InvalidFlash(val row: Int, val col: Int, val horizontal: Boolean, val tick: Int)
+
 data class GameUiState(
     val snapshot: MatchSnapshot? = null,
     val myPlayerIndex: Int = 0,
@@ -46,7 +49,22 @@ data class GameUiState(
     val confirmResign: Boolean = false,
     val history: List<MoveRecord> = emptyList(),
     val soundOn: Boolean = true,
+    // Presentation-only state (HUD labels, win-screen stats, invalid-placement feedback).
+    val vsComputer: Boolean = false,
+    val startedAtMs: Long? = null,
+    val endedAtMs: Long? = null,
+    val invalidFlash: InvalidFlash? = null,
 ) {
+    /** Who placed each wall we have seen this session (the match state itself doesn't record owners). */
+    val wallOwners: Map<PlacedWall, Int> get() =
+        history.mapNotNull { r -> r.wall?.let { it to r.player } }.toMap()
+    val wallsUsed: Int get() = (QuoridorRules.WALLS_PER_PLAYER - (gameState?.players?.getOrNull(myPlayerIndex)?.wallsLeft
+        ?: QuoridorRules.WALLS_PER_PLAYER))
+    val myTurnsTaken: Int get() = history.count { it.player == myPlayerIndex && !it.gameEnd }
+    val elapsedSeconds: Long get() {
+        val start = startedAtMs ?: return 0
+        return ((endedAtMs ?: nowMs) - start).coerceAtLeast(0) / 1000
+    }
     /** The most recent wall placement, so the board can animate it in. */
     val lastWall: PlacedWall? get() = history.lastOrNull()?.wall
     /** Seconds before the player on turn forfeits, or null when no timer applies. */
@@ -81,8 +99,15 @@ class GameViewModel @Inject constructor(
     fun initLocal(difficulty: AiDifficulty) {
         if (ai != null) return
         ai = QuoridorAi(difficulty)
-        _state.update { it.copy(myPlayerIndex = 0) }
+        _state.update { it.copy(myPlayerIndex = 0, vsComputer = true) }
         repo.soundEnabled.onEach { on -> _state.update { it.copy(soundOn = on) } }.launchIn(viewModelScope)
+        updateSnapshot(MatchSnapshot(QuoridorRules.initialState(firstTurn = 0), revision = 0))
+    }
+
+    /** Starts a fresh game against the same computer opponent (the "Play Again" button). */
+    fun restartLocal() {
+        if (!isLocal) return
+        _state.update { GameUiState(myPlayerIndex = 0, soundOn = it.soundOn, vsComputer = true) }
         updateSnapshot(MatchSnapshot(QuoridorRules.initialState(firstTurn = 0), revision = 0))
     }
 
@@ -155,9 +180,12 @@ class GameViewModel @Inject constructor(
             val moves = if (snap.state.currentTurn == s.myPlayerIndex)
                 QuoridorRules.getValidMoves(snap.state, s.myPlayerIndex)
             else emptyList()
+            val now = System.currentTimeMillis()
             s.copy(
                 snapshot = snap, validMoves = moves, wallPreview = null, selectedCell = null, error = null,
                 history = history,
+                startedAtMs = s.startedAtMs ?: now,
+                endedAtMs = s.endedAtMs ?: if (snap.state.status == "finished") now else null,
             )
         }
         effect?.let { if (_state.value.soundOn) sound.play(it) }
@@ -185,7 +213,16 @@ class GameViewModel @Inject constructor(
         if (!s.isMyTurn || s.submitting || s.finished) return
         val gs = s.gameState ?: return
         val isValid = QuoridorRules.isWallValid(gs, wr, wc, s.wallHorizontal, s.myPlayerIndex)
-        if (!isValid) { _state.update { it.copy(error = "Invalid wall placement") }; return }
+        if (!isValid) {
+            _state.update {
+                it.copy(
+                    error = "Invalid wall placement",
+                    invalidFlash = InvalidFlash(wr, wc, s.wallHorizontal, (it.invalidFlash?.tick ?: 0) + 1),
+                )
+            }
+            if (s.soundOn) sound.play(Sfx.INVALID)
+            return
+        }
 
         if (s.wallPreview?.row == wr && s.wallPreview.col == wc && s.wallPreview.horizontal == s.wallHorizontal) {
             // Second tap on same slot → confirm
@@ -205,6 +242,8 @@ class GameViewModel @Inject constructor(
         if (isLocal) return applyLocal(_state.value.myPlayerIndex, QuoridorRules.Action.Wall(wr, wc, horizontal))
         submit(roomId) { rev -> repo.submitWall(roomId, rev, wr, wc, horizontal) }
     }
+
+    fun clearError() = _state.update { it.copy(error = null) }
 
     fun askResign(show: Boolean) = _state.update { it.copy(confirmResign = show) }
 

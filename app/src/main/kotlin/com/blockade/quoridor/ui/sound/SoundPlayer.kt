@@ -8,6 +8,7 @@ import javax.inject.Singleton
 enum class Sfx(val tone: Int, val durationMs: Int) {
     MOVE(ToneGenerator.TONE_PROP_BEEP, 80),
     WALL(ToneGenerator.TONE_PROP_BEEP2, 120),
+    INVALID(ToneGenerator.TONE_SUP_ERROR, 150),
     WIN(ToneGenerator.TONE_PROP_ACK, 400),
     LOSE(ToneGenerator.TONE_PROP_NACK, 400),
 }

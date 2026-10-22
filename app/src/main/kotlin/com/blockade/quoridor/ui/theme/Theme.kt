@@ -1,30 +1,51 @@
 package com.blockade.quoridor.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
-private val LightColors = lightColorScheme()
-private val DarkColors = darkColorScheme()
-
+/**
+ * The game is designed as a dark "night board" and does not follow the system theme or dynamic colours,
+ * so that the board, pawns and walls always keep their contrast. Set [USE_LIGHT_WOOD_THEME] for the light variant.
+ */
 @Composable
 fun QuoridorTheme(
-    dark: Boolean = isSystemInDarkTheme(),
+    palette: GamePalette = if (USE_LIGHT_WOOD_THEME) LightWoodPalette else NightPalette,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val ctx = LocalContext.current
-            if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        }
-        dark -> DarkColors
-        else -> LightColors
+    val scheme = if (palette.isDark) {
+        darkColorScheme(
+            primary = palette.player,
+            onPrimary = palette.groove,
+            secondary = palette.opponent,
+            tertiary = palette.neutralWall,
+            background = palette.backgroundTop,
+            onBackground = palette.onSurface,
+            surface = palette.surface,
+            onSurface = palette.onSurface,
+            surfaceVariant = palette.surfaceHigh,
+            onSurfaceVariant = palette.onSurfaceMuted,
+            outline = palette.outline,
+            error = palette.invalid,
+        )
+    } else {
+        lightColorScheme(
+            primary = palette.player,
+            onPrimary = palette.surface,
+            secondary = palette.opponent,
+            tertiary = palette.neutralWall,
+            background = palette.backgroundTop,
+            onBackground = palette.onSurface,
+            surface = palette.surface,
+            onSurface = palette.onSurface,
+            surfaceVariant = palette.surfaceHigh,
+            onSurfaceVariant = palette.onSurfaceMuted,
+            outline = palette.outline,
+            error = palette.invalid,
+        )
     }
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    ProvideGamePalette(palette) {
+        MaterialTheme(colorScheme = scheme, typography = GameTypography, content = content)
+    }
 }
