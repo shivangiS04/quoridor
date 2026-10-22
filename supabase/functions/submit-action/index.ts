@@ -18,9 +18,14 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authErr } = await anon.auth.getUser();
   if (authErr || !user) return errorResponse("Unauthorized", 401);
 
-  const body = await req.json();
-  const { room_id, revision, action } = body;
-  if (!room_id || revision === undefined || !action) {
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse("Invalid JSON body");
+  }
+  const { room_id, revision, action } = body ?? {};
+  if (!room_id || typeof revision !== "number" || !action?.type) {
     return errorResponse("room_id, revision, and action are required");
   }
 
@@ -30,7 +35,7 @@ Deno.serve(async (req) => {
     .select("player_index")
     .eq("room_id", room_id)
     .eq("player_id", user.id)
-    .single();
+    .maybeSingle();
   if (!member) return errorResponse("Not a room member", 403);
 
   // Load current match
@@ -38,7 +43,7 @@ Deno.serve(async (req) => {
     .from("matches")
     .select("state, revision")
     .eq("room_id", room_id)
-    .single();
+    .maybeSingle();
   if (!match) return errorResponse("Match not found", 404);
 
   if (match.revision !== revision) return errorResponse("Stale revision — fetch latest state", 409);

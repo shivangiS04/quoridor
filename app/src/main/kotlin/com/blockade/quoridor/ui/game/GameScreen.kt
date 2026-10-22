@@ -1,7 +1,17 @@
 package com.blockade.quoridor.ui.game
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import com.blockade.quoridor.domain.rules.MoveRecord
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.DirectionsWalk
@@ -11,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.blockade.quoridor.domain.ai.AiDifficulty
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -19,17 +30,21 @@ fun GameScreen(
     roomId: String,
     myPlayerIndex: Int,
     onLeave: () -> Unit,
+    aiDifficulty: AiDifficulty? = null,
     vm: GameViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(roomId) { vm.init(roomId, myPlayerIndex) }
+    LaunchedEffect(roomId, aiDifficulty) {
+        if (aiDifficulty != null) vm.initLocal(aiDifficulty) else vm.init(roomId, myPlayerIndex)
+    }
 
     Scaffold { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -55,8 +70,25 @@ fun GameScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // Turn timer / forfeit (online only)
+            if (aiDifficulty == null) TimerRow(state, onClaim = { vm.claimTimeout(roomId) })
+
             // Controls
             ControlRow(state, vm)
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!state.finished && state.gameState != null) {
+                    TextButton(onClick = { vm.askResign(true) }) { Text("Resign") }
+                }
+                IconButton(onClick = vm::toggleSound) {
+                    Icon(
+                        if (state.soundOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                        contentDescription = if (state.soundOn) "Mute" else "Unmute",
+                    )
+                }
+            }
+
+            MoveHistoryPanel(state.history, state.myPlayerIndex)
 
             // Error
             state.error?.let {
@@ -66,7 +98,17 @@ fun GameScreen(
 
             // Win dialog
             if (state.finished) {
-                WinDialog(winner = state.winner, myIndex = myPlayerIndex, onLeave = onLeave)
+                WinDialog(winner = state.winner, myIndex = myPlayerIndex, onLeave = { vm.leave(onLeave) })
+            }
+
+            if (state.confirmResign) {
+                AlertDialog(
+                    onDismissRequest = { vm.askResign(false) },
+                    title = { Text("Resign?") },
+                    text = { Text("Your opponent will win the game.") },
+                    confirmButton = { TextButton(onClick = { vm.resign(roomId) }) { Text("Resign") } },
+                    dismissButton = { TextButton(onClick = { vm.askResign(false) }) { Text("Keep playing") } },
+                )
             }
         }
     }
@@ -87,12 +129,54 @@ private fun StatusBar(state: GameUiState, myPlayerIndex: Int) {
         val turnText = when {
             state.finished -> if (state.winner == myPlayerIndex) "You win!" else "You lose"
             state.isMyTurn -> "Your turn"
+            state.submitting && state.snapshot?.updatedAtMs == null -> "Computer is thinking…"
             else -> "Opponent's turn"
         }
         Text(turnText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
         // Opponent walls
         Text("Opp walls: ${gs.players[1 - myPlayerIndex].wallsLeft}", style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun MoveHistoryPanel(history: List<MoveRecord>, myIndex: Int) {
+    var open by remember { mutableStateOf(false) }
+    TextButton(onClick = { open = !open }) {
+        Text("Moves (${history.size})")
+        Icon(if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+    }
+    if (!open) return
+    val listState = rememberLazyListState()
+    LaunchedEffect(history.size) { if (history.isNotEmpty()) listState.animateScrollToItem(history.lastIndex) }
+    if (history.isEmpty()) {
+        Text("No moves yet", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().height(120.dp)) {
+        itemsIndexed(history) { i, m ->
+            val who = if (m.player == myIndex) "You" else "Opp"
+            Text(
+                "${i + 1}. $who: ${m.text}",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (i == history.lastIndex) FontWeight.Bold else FontWeight.Normal,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimerRow(state: GameUiState, onClaim: () -> Unit) {
+    val left = state.secondsLeft ?: return
+    if (state.canClaimTimeout) {
+        Button(onClick = onClaim, enabled = !state.submitting) { Text("Opponent timed out — claim win") }
+    } else {
+        val who = if (state.isMyTurn) "Your" else "Opponent's"
+        Text(
+            "$who time left: ${left / 60}:${"%02d".format(left % 60)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

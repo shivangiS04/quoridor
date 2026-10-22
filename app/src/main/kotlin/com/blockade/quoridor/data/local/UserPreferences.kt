@@ -3,6 +3,7 @@ package com.blockade.quoridor.data.local
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -18,6 +19,14 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("u
 class UserPreferences @Inject constructor(@ApplicationContext private val ctx: Context) {
 
     private val ROOM_ID = stringPreferencesKey("room_id")
+
+    private val SOUND = booleanPreferencesKey("sound_enabled")
+
+    val soundEnabled: Flow<Boolean> = ctx.dataStore.data.map { it[SOUND] ?: true }
+
+    suspend fun setSoundEnabled(enabled: Boolean) {
+        ctx.dataStore.edit { it[SOUND] = enabled }
+    }
 
     val activeRoomId: Flow<String?> = ctx.dataStore.data.map { it[ROOM_ID] }
 

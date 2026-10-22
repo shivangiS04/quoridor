@@ -27,15 +27,15 @@ Deno.serve(async (req) => {
     .select("player_index")
     .eq("room_id", roomId)
     .eq("player_id", user.id)
-    .single();
+    .maybeSingle();
   if (!member) return errorResponse("Not a room member", 403);
 
-  const { data: room } = await svc.from("rooms").select("id, code").eq("id", roomId).single();
+  const { data: room } = await svc.from("rooms").select("id, code").eq("id", roomId).maybeSingle();
   if (!room) return errorResponse("Room not found", 404);
 
   const { data: match } = await svc
     .from("matches")
-    .select("state, revision")
+    .select("state, revision, updated_at")
     .eq("room_id", roomId)
     .maybeSingle();
 

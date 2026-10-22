@@ -18,15 +18,20 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authErr } = await anon.auth.getUser();
   if (authErr || !user) return errorResponse("Unauthorized", 401);
 
-  const { code } = await req.json();
-  if (!code) return errorResponse("code is required");
+  let code: unknown;
+  try {
+    ({ code } = await req.json());
+  } catch {
+    return errorResponse("Invalid JSON body");
+  }
+  if (typeof code !== "string" || !code) return errorResponse("code is required");
 
   // Look up room
   const { data: room, error: roomErr } = await svc
     .from("rooms")
     .select("id")
-    .eq("code", code.toUpperCase())
-    .single();
+    .eq("code", code.trim().toUpperCase())
+    .maybeSingle();
   if (roomErr || !room) return errorResponse("Room not found", 404);
 
   // Check room capacity
@@ -36,13 +41,17 @@ Deno.serve(async (req) => {
     .eq("room_id", room.id);
 
   if (!members) return errorResponse("Failed to read room");
-  if (members.length >= 2) return errorResponse("Room is full", 409);
-
-  // Already a member?
+  // Already a member? (rejoining is allowed even when the room is full)
   const existing = members.find((m) => m.player_id === user.id);
   if (existing) {
-    return jsonResponse({ room_id: room.id, player_index: existing.player_index, status: "waiting" });
+    return jsonResponse({
+      room_id: room.id,
+      player_index: existing.player_index,
+      status: members.length >= 2 ? "started" : "waiting",
+    });
   }
+
+  if (members.length >= 2) return errorResponse("Room is full", 409);
 
   // Add as player 1
   const { error: joinErr } = await svc.from("room_members").insert({
@@ -50,6 +59,8 @@ Deno.serve(async (req) => {
     player_id: user.id,
     player_index: 1,
   });
+  // Unique violation on (room_id, player_index): someone else took the seat first
+  if (joinErr?.code === "23505") return errorResponse("Room is full", 409);
   if (joinErr) return errorResponse("Failed to join");
 
   // Both players present — create match with random first turn

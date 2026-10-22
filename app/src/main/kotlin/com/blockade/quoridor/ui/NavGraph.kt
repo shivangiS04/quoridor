@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.blockade.quoridor.domain.ai.AiDifficulty
 import com.blockade.quoridor.ui.game.GameScreen
 import com.blockade.quoridor.ui.home.HomeScreen
 import com.blockade.quoridor.ui.waiting.WaitingScreen
@@ -23,6 +24,23 @@ fun NavGraph() {
                 onRoomJoined = { roomId, pi ->
                     nav.navigate("game/$roomId/$pi")
                 },
+                onResumeWaiting = { roomId, code ->
+                    nav.navigate("waiting/$roomId/$code")
+                },
+                onPlayComputer = { difficulty -> nav.navigate("local/${difficulty.name}") },
+            )
+        }
+
+        composable(
+            "local/{difficulty}",
+            arguments = listOf(navArgument("difficulty") { type = NavType.StringType }),
+        ) { back ->
+            val difficulty = AiDifficulty.valueOf(back.arguments!!.getString("difficulty")!!)
+            GameScreen(
+                roomId = "local",
+                myPlayerIndex = 0,
+                aiDifficulty = difficulty,
+                onLeave = { nav.popBackStack("home", inclusive = false) },
             )
         }
 

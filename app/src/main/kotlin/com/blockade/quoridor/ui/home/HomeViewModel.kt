@@ -2,19 +2,26 @@ package com.blockade.quoridor.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.blockade.quoridor.data.repository.GameException
 import com.blockade.quoridor.data.repository.GameRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 data class HomeUiState(
     val loading: Boolean = false,
     val joinCode: String = "",
     val error: String? = null,
+    val resume: ResumeTarget? = null,
 )
+
+/** A room this device was in when the app last closed. */
+data class ResumeTarget(val roomId: String, val code: String, val playerIndex: Int, val started: Boolean)
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -23,6 +30,27 @@ class HomeViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(HomeUiState())
     val state = _state.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val roomId = repo.activeRoomId.first() ?: return@launch
+            runCatching { repo.getRoom(roomId) }
+                .onSuccess { r ->
+                    val over = r.match?.state?.get("status")?.jsonPrimitive?.content == "finished"
+                    if (over) repo.clearRoom()
+                    else _state.update {
+                        it.copy(resume = ResumeTarget(r.roomId, r.code, r.playerIndex, r.match != null))
+                    }
+                }
+                // Room no longer exists or we were removed from it; only forget it on a definite server answer.
+                .onFailure { e -> if (e is GameException && e.status != null) repo.clearRoom() }
+        }
+    }
+
+    fun dismissResume() {
+        _state.update { it.copy(resume = null) }
+        viewModelScope.launch { repo.clearRoom() }
+    }
 
     fun setJoinCode(code: String) = _state.update { it.copy(joinCode = code.uppercase().take(8)) }
 

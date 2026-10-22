@@ -130,22 +130,11 @@ class QuoridorRulesTest {
         assertTrue(QuoridorRules.hasPath(s, 1))
     }
 
-    @Test fun `wall that blocks all paths is invalid`() {
-        // Build a wall across the full middle row (rows 4) — would need 4 walls to fully block
-        // Let's do a simpler partial case and verify isWallValid rejects a single path-blocker
-        val existingWalls = listOf(WallPos(4, 0), WallPos(4, 2), WallPos(4, 4), WallPos(4, 6))
-        val s = emptyState(
-            p0row = 8, p0col = 4, p1row = 0, p1col = 4,
-            hw = existingWalls,
-        ).let { gs ->
-            gs.copy(players = gs.players.map { it.copy(wallsLeft = 6) })
-        }
-        // Placing wall at (4, 5) with existing walls would close off col 5&6; not enough to block fully
-        // Place final wall to close gap at (4, 5) — col 5 & 6 blocked, col 6 & 7 partially blocked
-        // This test verifies isWallValid returns false when it would block a player
-        val blocked = !QuoridorRules.isWallValid(s, 4, 5, horizontal = true, pi = 0)
-        // Either result is acceptable; we just verify no crash
-        assertTrue(blocked || !blocked) // always passes — real assertion is structural
+    @Test fun `wall that seals a player in is rejected`() {
+        // Four horizontal walls close every column but 8 off from row 7; a vertical wall then seals column 8.
+        val s = emptyState(p0row = 8, p0col = 0, hw = listOf(0, 2, 4, 6).map { WallPos(7, it) })
+        assertFalse(QuoridorRules.isWallValid(s, 7, 7, horizontal = false, pi = 0))
+        assertTrue(QuoridorRules.isWallValid(s, 3, 3, horizontal = false, pi = 0))
     }
 
     // ------------------------------------------------------------------

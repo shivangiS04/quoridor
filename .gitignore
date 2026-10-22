@@ -8,3 +8,4 @@
 .externalNativeBuild
 .caches
 supabase/.temp
+build/

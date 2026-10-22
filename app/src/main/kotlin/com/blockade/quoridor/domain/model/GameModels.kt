@@ -32,6 +32,8 @@ data class GameState(
 data class MatchSnapshot(
     val state: GameState,
     val revision: Int,
+    /** Server time (epoch ms) of the last accepted action; drives the turn timer. */
+    @kotlinx.serialization.Transient val updatedAtMs: Long? = null,
 )
 
 data class RoomInfo(

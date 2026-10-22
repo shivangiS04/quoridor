@@ -31,3 +31,7 @@ enable_signup = false  # anonymous-only
 
 [functions]
 verify_jwt = true
+
+# Called by a scheduler with a shared secret rather than a user JWT
+[functions.cleanup-rooms]
+verify_jwt = false

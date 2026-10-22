@@ -2,7 +2,7 @@ package com.blockade.quoridor.data.remote
 
 import com.blockade.quoridor.BuildConfig
 import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.gotrue.Auth
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.postgrest.Postgrest

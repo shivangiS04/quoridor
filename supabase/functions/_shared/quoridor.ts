@@ -5,6 +5,9 @@ export const BOARD = 9;
 export const WALL_GRID = 8;
 export const WALLS_PER_PLAYER = 10;
 
+/** A player who has not moved within this window can be forfeited by the opponent. */
+export const TURN_TIMEOUT_MS = 120_000;
+
 export interface Pos { row: number; col: number }
 export interface WallPos { row: number; col: number }
 
@@ -154,8 +157,12 @@ export function applyAction(
   s: GameState,
   pi: number,
   action: { type: "move"; row: number; col: number } |
-          { type: "wall"; row: number; col: number; horizontal: boolean },
+          { type: "wall"; row: number; col: number; horizontal: boolean } |
+          { type: "resign" },
 ): GameState {
+  if (action.type === "resign") {
+    return { ...s, status: "finished", winner: 1 - pi };
+  }
   if (action.type === "move") {
     const valid = getValidMoves(s, pi);
     if (!valid.some(m => m.row === action.row && m.col === action.col)) {
@@ -197,6 +204,22 @@ export function applyAction(
 
     return { ...specState, current_turn: 1 - pi };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Turn timeout: `claimant` wins if it is the opponent's turn and they have been
+// idle for longer than TURN_TIMEOUT_MS. Throws when the claim is not valid yet.
+// ---------------------------------------------------------------------------
+export function claimTimeout(
+  s: GameState,
+  claimant: number,
+  lastMoveAt: number,
+  now: number,
+): GameState {
+  if (s.status !== "playing") throw new Error("Match is not in progress");
+  if (s.current_turn === claimant) throw new Error("It is your turn");
+  if (now - lastMoveAt < TURN_TIMEOUT_MS) throw new Error("Opponent still has time");
+  return { ...s, status: "finished", winner: claimant };
 }
 
 // ---------------------------------------------------------------------------
