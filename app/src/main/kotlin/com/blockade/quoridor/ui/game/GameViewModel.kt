@@ -213,16 +213,7 @@ class GameViewModel @Inject constructor(
         if (!s.isMyTurn || s.submitting || s.finished) return
         val gs = s.gameState ?: return
         val isValid = QuoridorRules.isWallValid(gs, wr, wc, s.wallHorizontal, s.myPlayerIndex)
-        if (!isValid) {
-            _state.update {
-                it.copy(
-                    error = "Invalid wall placement",
-                    invalidFlash = InvalidFlash(wr, wc, s.wallHorizontal, (it.invalidFlash?.tick ?: 0) + 1),
-                )
-            }
-            if (s.soundOn) sound.play(Sfx.INVALID)
-            return
-        }
+        if (!isValid) { flashInvalid(wr, wc, s.wallHorizontal); return }
 
         if (s.wallPreview?.row == wr && s.wallPreview.col == wc && s.wallPreview.horizontal == s.wallHorizontal) {
             // Second tap on same slot → confirm
@@ -230,6 +221,28 @@ class GameViewModel @Inject constructor(
         } else {
             _state.update { it.copy(wallPreview = WallPreview(wr, wc, s.wallHorizontal), error = null) }
         }
+    }
+
+    /** A wall was dragged onto the board and released over notch ([wr], [wc]): place it, or flash if it's illegal. */
+    fun onWallDrop(roomId: String, wr: Int, wc: Int) {
+        val s = _state.value
+        if (!s.isMyTurn || s.submitting || s.finished || s.mode != InteractionMode.WALL) return
+        val gs = s.gameState ?: return
+        if (QuoridorRules.isWallValid(gs, wr, wc, s.wallHorizontal, s.myPlayerIndex)) {
+            submitWall(roomId, wr, wc, s.wallHorizontal)
+        } else {
+            flashInvalid(wr, wc, s.wallHorizontal)
+        }
+    }
+
+    private fun flashInvalid(wr: Int, wc: Int, horizontal: Boolean) {
+        _state.update {
+            it.copy(
+                error = "Invalid wall placement",
+                invalidFlash = InvalidFlash(wr, wc, horizontal, (it.invalidFlash?.tick ?: 0) + 1),
+            )
+        }
+        if (_state.value.soundOn) sound.play(Sfx.INVALID)
     }
 
     private fun submitMove(roomId: String, row: Int, col: Int) {
