@@ -138,6 +138,7 @@ fun GameScreen(
                         uiState = state,
                         onCellTap = { r, col -> vm.onCellTap(roomId, r, col) },
                         onWallSlotTap = { wr, wc -> vm.onWallSlotTap(roomId, wr, wc) },
+                        onWallDrop = { wr, wc -> vm.onWallDrop(roomId, wr, wc) },
                         modifier = Modifier.size(side),
                     )
                 } else {
@@ -160,7 +161,7 @@ fun GameScreen(
                     state.finished -> "Game finished"
                     !state.isMyTurn -> "Waiting for $opponentName…"
                     state.mode == InteractionMode.MOVE -> "Tap a glowing dot to move"
-                    else -> "Tap a groove to preview a wall, tap again to place it"
+                    else -> "Drag a wall onto the board, or tap a groove twice"
                 },
                 modifier = Modifier.padding(bottom = Dimens.gapSmall),
             )

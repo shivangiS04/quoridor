@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,7 +34,9 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.blockade.quoridor.domain.model.GameState
 import com.blockade.quoridor.domain.model.WallPos
@@ -45,6 +48,7 @@ import com.blockade.quoridor.ui.theme.GameTheme
 import com.blockade.quoridor.ui.theme.Motion
 import kotlin.math.PI
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private const val CELLS = QuoridorRules.BOARD            // 9
@@ -74,12 +78,24 @@ fun QuoridorBoard(
     uiState: GameUiState,
     onCellTap: (row: Int, col: Int) -> Unit,
     onWallSlotTap: (wr: Int, wc: Int) -> Unit,
+    onWallDrop: (wr: Int, wc: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = GameTheme.colors
     val me = uiState.myPlayerIndex
     val onCell by rememberUpdatedState(onCellTap)
     val onWall by rememberUpdatedState(onWallSlotTap)
+    val onDrop by rememberUpdatedState(onWallDrop)
+    val haptic = LocalHapticFeedback.current
+
+    // Drag and drop: in wall mode, dragging on the board carries a wall piece that snaps to the nearest notch.
+    // The piece is held above the fingertip so it stays visible; releasing over a legal slot places it.
+    var drag by remember { mutableStateOf<DragState?>(null) }
+    val canDrag by rememberUpdatedState(
+        uiState.mode == InteractionMode.WALL && uiState.isMyTurn && !uiState.submitting && !uiState.finished,
+    )
+    val horizontalNow by rememberUpdatedState(uiState.wallHorizontal)
+    val gameNow by rememberUpdatedState(state)
 
     // --- animation state -------------------------------------------------------------------
     val pulse = rememberInfiniteTransition(label = "pulse").animateFloat(
@@ -156,6 +172,12 @@ fun QuoridorBoard(
             uiState.wallPreview?.let { p ->
                 drawWallGhost(WallPos(p.row, p.col), p.horizontal, m, colors.player, fillAlpha = 0.4f, outlineAlpha = 0.95f)
             }
+            drag?.let { d ->
+                drawWallGhost(
+                    WallPos(d.wr, d.wc), horizontalNow, m, if (d.valid) colors.player else colors.invalid,
+                    fillAlpha = 0.4f, outlineAlpha = 0.95f,
+                )
+            }
             if (invalid != null && invalidAlpha.value > 0.01f) {
                 drawWallGhost(
                     WallPos(invalid.row, invalid.col), invalid.horizontal, m, colors.invalid,
@@ -168,6 +190,31 @@ fun QuoridorBoard(
         Canvas(
             Modifier
                 .fillMaxSize()
+                .pointerInput(me) {
+                    val lift = 44.dp.toPx()
+                    fun inside(p: Offset) = p.x in 0f..size.width.toFloat() && p.y in 0f..size.height.toFloat()
+                    fun update(pos: Offset) {
+                        val m = Metrics(size.width.toFloat())
+                        val aim = Offset(pos.x, pos.y - lift)
+                        val (wr, wc) = nearestNotch(aim.x, aim.y, m.cell, m.gap)
+                        val prev = drag
+                        val moved = prev == null || prev.wr != wr || prev.wc != wc
+                        val valid = if (!moved) prev!!.valid else QuoridorRules.isWallValid(gameNow, wr, wc, horizontalNow, me)
+                        if (moved) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        drag = DragState(aim, wr, wc, valid)
+                    }
+                    detectDragGestures(
+                        onDragStart = { if (canDrag) update(it) },
+                        onDrag = { change, _ -> if (drag != null) { change.consume(); update(change.position) } },
+                        onDragEnd = {
+                            val d = drag
+                            drag = null
+                            // Dropping off the board cancels.
+                            if (d != null && inside(d.aim)) onDrop(d.wr, d.wc)
+                        },
+                        onDragCancel = { drag = null },
+                    )
+                }
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
                         val m = Metrics(size.width.toFloat())
@@ -197,6 +244,7 @@ fun QuoridorBoard(
             }
 
             val turn = state.currentTurn.takeIf { state.status == "playing" }
+
             // Draw the pawn that is lower on screen last so a hop never goes behind the other one.
             val order = if (myPawn.position.y <= oppPawn.position.y) listOf(0, 1) else listOf(1, 0)
             for (who in order) {
@@ -218,6 +266,7 @@ fun QuoridorBoard(
                     active = turn == pi,
                 )
             }
+            drag?.let { d -> drawHeldWall(d.aim, horizontalNow, m, if (d.valid) colors.player else colors.invalid) }
         }
     }
 }
@@ -260,6 +309,17 @@ private fun rememberPawnMotion(row: Int, col: Int): PawnMotion {
 // ---------------------------------------------------------------------------------------------
 // Hit testing (unchanged behaviour)
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * The wall notch (row, col) closest to a point on the board. Notch (wr, wc) sits where the gutters between
+ * cells (wr..wr+1, wc..wc+1) cross, i.e. at x = wc*stride + cell + gap/2; points outside snap to the edge notch.
+ */
+internal fun nearestNotch(x: Float, y: Float, cell: Float, gap: Float): Pair<Int, Int> {
+    val stride = cell + gap
+    val col = ((x - cell - gap / 2) / stride).roundToInt().coerceIn(0, WALL_GRID - 1)
+    val row = ((y - cell - gap / 2) / stride).roundToInt().coerceIn(0, WALL_GRID - 1)
+    return row to col
+}
 
 private enum class SlotType { CELL, GAP }
 
@@ -397,6 +457,24 @@ private fun DrawScope.drawWallGhost(
         Color.White.copy(alpha = outlineAlpha), r.topLeft, r.size, radius,
         style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 7f))),
     )
+}
+
+/** Where a dragged wall currently is: [aim] is the (lifted) point it is held at, (wr, wc) the notch it snaps to. */
+private data class DragState(val aim: Offset, val wr: Int, val wc: Int, val valid: Boolean)
+
+/** The wall piece "in the hand": bigger shadow (it's lifted off the board), centred on the held point. */
+private fun DrawScope.drawHeldWall(aim: Offset, horizontal: Boolean, m: Metrics, color: Color) {
+    val length = 2 * m.cell + m.gap
+    val thick = m.gap * 1.7f
+    val size = if (horizontal) Size(length, thick) else Size(thick, length)
+    val tl = aim - Offset(size.width / 2, size.height / 2)
+    val radius = CornerRadius(min(size.width, size.height) / 2)
+    drawRoundRect(Color.Black.copy(alpha = 0.35f), tl + Offset(0f, m.gap * 1.6f), size, radius)
+    val brush = if (horizontal)
+        Brush.verticalGradient(listOf(color.lighten(0.45f), color, color.darken(0.3f)), startY = tl.y, endY = tl.y + size.height)
+    else
+        Brush.horizontalGradient(listOf(color.lighten(0.45f), color, color.darken(0.3f)), startX = tl.x, endX = tl.x + size.width)
+    drawRoundRect(brush, tl, size, radius, alpha = 0.92f)
 }
 
 private enum class Glyph { PERSON, ROBOT, DIAMOND }
