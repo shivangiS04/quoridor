@@ -9,3 +9,4 @@
 .caches
 supabase/.temp
 build/
+node_modules/

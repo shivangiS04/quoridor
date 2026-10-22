@@ -5,6 +5,7 @@ import {
   assertThrows,
 } from "jsr:@std/assert@1";
 import {
+  actionNotAllowedReason,
   applyAction,
   claimTimeout,
   GameState,
@@ -252,4 +253,34 @@ Deno.test("timeout cannot be claimed on a finished match", () => {
     Error,
     "not in progress",
   );
+});
+
+Deno.test("resigning is allowed on either player's turn, moves and walls only on your own", () => {
+  const onTurn0 = makeState({ turn: 0 });
+  for (const pi of [0, 1]) {
+    assertEquals(actionNotAllowedReason(onTurn0, pi, { type: "resign" }), null);
+  }
+  assertEquals(actionNotAllowedReason(onTurn0, 0, { type: "move" }), null);
+  assertEquals(
+    actionNotAllowedReason(onTurn0, 1, { type: "move" }),
+    "Not your turn",
+  );
+  assertEquals(
+    actionNotAllowedReason(onTurn0, 1, { type: "wall" }),
+    "Not your turn",
+  );
+});
+
+Deno.test("nothing can be submitted once the match is over, not even a resignation", () => {
+  const over = {
+    ...makeState({ turn: 0 }),
+    status: "finished" as const,
+    winner: 1,
+  };
+  for (const type of ["move", "wall", "resign"]) {
+    assertEquals(
+      actionNotAllowedReason(over, 0, { type }),
+      "Match is not in progress",
+    );
+  }
 });

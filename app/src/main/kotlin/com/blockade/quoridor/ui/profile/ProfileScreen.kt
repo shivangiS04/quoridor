@@ -141,25 +141,24 @@ fun ProfileScreen(onBack: () -> Unit, vm: ProfileViewModel = hiltViewModel()) {
 
 /** The profile photo, or the first letter of the name on a flat disc when there is none. */
 @Composable
-fun Avatar(profile: Profile, modifier: Modifier = Modifier) {
+fun Avatar(profile: Profile, modifier: Modifier = Modifier) = Avatar(profile.displayName, profile.photoUrl, modifier)
+
+@Composable
+fun Avatar(name: String, photoUrl: String?, modifier: Modifier = Modifier) {
     val c = GameTheme.colors
     Box(
         modifier.clip(CircleShape).background(c.surfaceHigh).border(1.dp, c.outline, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (profile.photoUrl != null) {
+        if (photoUrl != null) {
             AsyncImage(
-                model = profile.photoUrl,
-                contentDescription = "${profile.displayName}'s photo",
+                model = photoUrl,
+                contentDescription = "$name's photo",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Text(
-                profile.displayName.take(1).uppercase(),
-                style = MaterialTheme.typography.headlineMedium,
-                color = c.onSurface,
-            )
+            Text(name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium, color = c.onSurface)
         }
     }
 }

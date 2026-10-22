@@ -2,6 +2,8 @@ package com.blockade.quoridor.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.blockade.quoridor.data.model.CommunityStats
+import com.blockade.quoridor.data.repository.CommunityRepository
 import com.blockade.quoridor.data.repository.GameException
 import com.blockade.quoridor.data.repository.GameRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,6 +20,8 @@ data class HomeUiState(
     val joinCode: String = "",
     val error: String? = null,
     val resume: ResumeTarget? = null,
+    /** Null until the first load succeeds (or while offline): the counters are simply not shown. */
+    val community: CommunityStats? = null,
 )
 
 /** A room this device was in when the app last closed. */
@@ -26,6 +30,7 @@ data class ResumeTarget(val roomId: String, val code: String, val playerIndex: I
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repo: GameRepository,
+    private val community: CommunityRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
@@ -45,6 +50,11 @@ class HomeViewModel @Inject constructor(
                 // Room no longer exists or we were removed from it; only forget it on a definite server answer.
                 .onFailure { e -> if (e is GameException && e.status != null) repo.clearRoom() }
         }
+    }
+
+    /** Refreshes "N online / X joined". Keeps the last numbers if the request fails. */
+    suspend fun refreshCommunity() {
+        runCatching { community.stats() }.onSuccess { stats -> _state.update { it.copy(community = stats) } }
     }
 
     fun dismissResume() {

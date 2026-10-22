@@ -5,6 +5,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,9 +34,21 @@ fun HomeScreen(
     onResumeWaiting: (roomId: String, code: String) -> Unit,
     onPlayComputer: (AiDifficulty) -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenLeaderboard: () -> Unit,
     vm: HomeViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+
+    // Keep the counters fresh while the home screen is visible.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                vm.refreshCommunity()
+                delay(30_000)
+            }
+        }
+    }
 
     GameBackground {
     Scaffold(containerColor = Color.Transparent) { padding ->
@@ -41,6 +59,12 @@ fun HomeScreen(
         ) {
             Icon(Icons.Default.AccountCircle, contentDescription = "Profile", tint = GameTheme.colors.onSurface)
         }
+        IconButton(
+            onClick = onOpenLeaderboard,
+            modifier = Modifier.align(Alignment.TopStart).padding(padding).padding(8.dp),
+        ) {
+            Icon(Icons.Default.EmojiEvents, contentDescription = "Leaderboard", tint = GameTheme.colors.onSurface)
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -50,7 +74,9 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text("Quoridor", fontSize = 40.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(8.dp))
+            CommunityBar(state.community)
+            Spacer(Modifier.height(40.dp))
 
             state.resume?.let { r ->
                 Button(

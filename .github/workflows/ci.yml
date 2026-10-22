@@ -46,3 +46,18 @@ jobs:
       - run: deno fmt --check supabase/functions/_shared/quoridor_test.ts
       - run: deno check supabase/functions/*/index.ts
       - run: deno test supabase/functions
+
+  db:
+    name: Database tests (migrations, RLS, triggers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: supabase/tests/package-lock.json
+      - run: npm ci
+        working-directory: supabase/tests
+      - run: npm test
+        working-directory: supabase/tests

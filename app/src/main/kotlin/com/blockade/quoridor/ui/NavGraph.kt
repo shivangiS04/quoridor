@@ -9,6 +9,7 @@ import androidx.navigation.navArgument
 import com.blockade.quoridor.domain.ai.AiDifficulty
 import com.blockade.quoridor.ui.game.GameScreen
 import com.blockade.quoridor.ui.home.HomeScreen
+import com.blockade.quoridor.ui.leaderboard.LeaderboardScreen
 import com.blockade.quoridor.ui.profile.ProfileScreen
 import com.blockade.quoridor.ui.waiting.WaitingScreen
 
@@ -30,8 +31,11 @@ fun NavGraph() {
                 },
                 onPlayComputer = { difficulty -> nav.navigate("local/${difficulty.name}") },
                 onOpenProfile = { nav.navigate("profile") },
+                onOpenLeaderboard = { nav.navigate("leaderboard") },
             )
         }
+
+        composable("leaderboard") { LeaderboardScreen(onBack = { nav.popBackStack() }) }
 
         composable("profile") { ProfileScreen(onBack = { nav.popBackStack() }) }
 

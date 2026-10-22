@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
-import { applyAction, GameState } from "../_shared/quoridor.ts";
+import { actionNotAllowedReason, applyAction, GameState } from "../_shared/quoridor.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return corsResponse();
@@ -49,8 +49,8 @@ Deno.serve(async (req) => {
   if (match.revision !== revision) return errorResponse("Stale revision — fetch latest state", 409);
 
   const state: GameState = match.state as GameState;
-  if (state.status !== "playing") return errorResponse("Match is not in progress");
-  if (state.current_turn !== member.player_index) return errorResponse("Not your turn");
+  const notAllowed = actionNotAllowedReason(state, member.player_index, action);
+  if (notAllowed) return errorResponse(notAllowed);
 
   let newState: GameState;
   try {
