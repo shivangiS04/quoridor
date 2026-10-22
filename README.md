@@ -93,3 +93,25 @@ cd supabase/tests && npm ci && npm test
 
 Runs every migration in an in-memory Postgres (PGlite) with Supabase-style default grants and checks counters, presence,
 leaderboard ordering, once-only result recording and the access rules. CI runs it on every pull request.
+
+## Release builds (APK)
+
+Debug builds run from Android Studio. To build an installable, signed release APK:
+
+1. Create a signing key **once** and keep it (and its passwords) safe and backed up. Apps signed with a different key
+   cannot update an existing install. See `keystore.properties.template`. **Never commit the key or the properties file**
+   (both are git-ignored).
+2. Build:
+   ```sh
+   QUORIDOR_KEYSTORE_PROPERTIES=/path/to/keystore.properties ./gradlew assembleRelease
+   # -> app/build/outputs/apk/release/app-release.apk
+   ```
+3. Check the signature: `apksigner verify --verbose --print-certs app-release.apk`.
+4. Share it, e.g. as a GitHub Release asset. Testers allow "install unknown apps" for their browser or file manager once.
+
+Without a keystore, `assembleRelease` produces an *unsigned* APK that Android will not install.
+
+## Public pages
+
+`docs/` contains the project homepage and the privacy policy (needed for Google sign-in in production). Publish them with
+GitHub Pages: Settings → Pages → *Deploy from a branch* → `main` → `/docs`. Replace `CONTACT_EMAIL_HERE` in both HTML files first.
