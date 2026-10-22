@@ -3,7 +3,9 @@ package com.blockade.quoridor.ui.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -36,6 +38,8 @@ fun GameBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.
                     drawRect(vignette)
                 }
             },
-        content = content,
-    )
+    ) {
+        // Everything on the background defaults to the palette's text colour (Text would otherwise be black).
+        CompositionLocalProvider(LocalContentColor provides c.onSurface) { content() }
+    }
 }

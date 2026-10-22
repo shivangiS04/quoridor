@@ -243,6 +243,8 @@ class GameViewModel @Inject constructor(
         submit(roomId) { rev -> repo.submitWall(roomId, rev, wr, wc, horizontal) }
     }
 
+    fun clearError() = _state.update { it.copy(error = null) }
+
     fun askResign(show: Boolean) = _state.update { it.copy(confirmResign = show) }
 
     fun resign(roomId: String) {

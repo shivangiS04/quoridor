@@ -190,9 +190,9 @@ fun QuoridorBoard(
             if (uiState.mode == InteractionMode.MOVE) {
                 for (p in uiState.validMoves) {
                     val center = Offset(p.col * m.stride + m.cell / 2, p.row * m.stride + m.cell / 2)
-                    val ring = m.cell * (0.24f + 0.10f * pulse.value)
+                    val ring = m.cell * (0.28f + 0.10f * pulse.value)
                     drawCircle(colors.player.copy(alpha = 0.28f - 0.12f * pulse.value), ring, center)
-                    drawCircle(colors.player.copy(alpha = 0.95f), m.cell * 0.10f, center)
+                    drawCircle(colors.player.copy(alpha = 0.95f), m.cell * 0.14f, center)
                 }
             }
 
@@ -367,7 +367,7 @@ private fun DrawScope.drawWallPiece(w: WallPos, horizontal: Boolean, m: Metrics,
     val r = wallRect(w, horizontal, m)
     // While settling the bar is fatter and fainter, like a piece being lowered into place.
     val grow = 1f + (1f - settle).coerceIn(0f, 1f) * 0.9f
-    val thick = (if (horizontal) r.size.height else r.size.width) * grow
+    val thick = (if (horizontal) r.size.height else r.size.width) * grow * 1.3f // a touch wider than the groove so it reads as a physical piece
     val center = if (horizontal) r.topLeft.y + r.size.height / 2 else r.topLeft.x + r.size.width / 2
     val length = if (horizontal) r.size.width else r.size.height
     val start = if (horizontal) r.topLeft.x else r.topLeft.y

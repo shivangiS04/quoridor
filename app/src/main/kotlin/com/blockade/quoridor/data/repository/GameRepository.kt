@@ -60,7 +60,18 @@ class GameRepository @Inject constructor(
 
     suspend fun ensureSignedIn() {
         val session = client.auth.currentSessionOrNull()
-        if (session == null) client.auth.signInAnonymously()
+        if (session == null) {
+            try {
+                client.auth.signInAnonymously()
+            } catch (e: RestException) {
+                // The server answered (e.g. anonymous sign-ins are disabled): its message is the useful one.
+                throw GameException(e.description ?: e.error, e.statusCode)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw GameException("Can't reach the server. Check your connection.")
+            }
+        }
     }
 
     /** Runs an edge-function call and turns every failure into a [GameException] with a readable message. */

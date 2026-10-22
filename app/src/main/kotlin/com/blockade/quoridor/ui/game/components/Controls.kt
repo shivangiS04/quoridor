@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,7 +39,6 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -222,10 +224,19 @@ fun SecondaryActions(
 @Composable
 private fun ActionButton(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
     val c = GameTheme.colors
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(Dimens.touchTarget)) {
-            Icon(icon, contentDescription = label, tint = if (enabled) c.onSurface else c.onSurfaceMuted.copy(alpha = 0.4f))
-        }
+    val tint = if (enabled) c.onSurface else c.onSurfaceMuted.copy(alpha = 0.4f)
+    // The whole icon + label is the touch target (min 48dp), not just the icon.
+    Column(
+        Modifier
+            .heightIn(min = Dimens.touchTarget)
+            .widthIn(min = Dimens.touchTarget * 1.4f)
+            .clip(RoundedCornerShape(Dimens.chipRadius))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp))
+        Spacer(Modifier.height(2.dp))
         Text(label, style = MaterialTheme.typography.labelSmall, color = c.onSurfaceMuted)
     }
 }

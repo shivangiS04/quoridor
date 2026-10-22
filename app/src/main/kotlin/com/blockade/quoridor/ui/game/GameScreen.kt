@@ -1,8 +1,5 @@
 package com.blockade.quoridor.ui.game
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -77,6 +74,13 @@ fun GameScreen(
         if (state.invalidFlash != null) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
+    LaunchedEffect(state.error) {
+        if (state.error != null) {
+            kotlinx.coroutines.delay(2500)
+            vm.clearError()
+        }
+    }
+
     val gs = state.gameState
     val opponentName = if (state.vsComputer) "CPU" else "Opponent"
 
@@ -143,9 +147,13 @@ fun GameScreen(
 
             // ---- Controls -----------------------------------------------------------------
             val canAct = state.isMyTurn && !state.finished && !state.submitting
-            TimerChip(state, onClaim = { vm.claimTimeout(roomId) })
-            AnimatedVisibility(visible = state.error != null, enter = fadeIn(), exit = fadeOut()) {
-                HintChip(state.error ?: "", warning = true, modifier = Modifier.padding(bottom = Dimens.gapSmall))
+            // One fixed-height slot for transient messages, so the board never shifts when they appear.
+            Box(Modifier.height(44.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (state.error != null) {
+                    HintChip(state.error ?: "", warning = true)
+                } else if (aiDifficulty == null) {
+                    TimerChip(state, onClaim = { vm.claimTimeout(roomId) })
+                }
             }
             HintChip(
                 when {
@@ -216,10 +224,9 @@ private fun TimerChip(state: GameUiState, onClaim: () -> Unit) {
         Button(
             onClick = onClaim,
             enabled = !state.submitting,
-            modifier = Modifier.padding(bottom = Dimens.gapSmall),
         ) { Text("Opponent timed out — claim win") }
     } else {
         val who = if (state.isMyTurn) "Your" else "Opponent's"
-        HintChip("$who time left: ${left / 60}:${"%02d".format(left % 60)}", modifier = Modifier.padding(bottom = Dimens.gapSmall))
+        HintChip("$who time left: ${left / 60}:${"%02d".format(left % 60)}")
     }
 }
