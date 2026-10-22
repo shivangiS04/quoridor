@@ -7,6 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import com.blockade.quoridor.ui.components.GameBackground
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -33,7 +35,8 @@ fun WaitingScreen(
         if (state.matchStarted) onMatchStarted(state.myPlayerIndex)
     }
 
-    Scaffold { padding ->
+    GameBackground {
+    Scaffold(containerColor = Color.Transparent) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -62,5 +65,6 @@ fun WaitingScreen(
             Spacer(Modifier.height(40.dp))
             CircularProgressIndicator()
         }
+    }
     }
 }
