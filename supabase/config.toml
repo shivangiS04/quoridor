@@ -25,12 +25,10 @@ jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
 enable_signup = true
+enable_anonymous_sign_ins = true
 
 [auth.email]
 enable_signup = false  # anonymous-only
-
-[functions]
-verify_jwt = true
 
 # Called by a scheduler with a shared secret rather than a user JWT
 [functions.cleanup-rooms]
