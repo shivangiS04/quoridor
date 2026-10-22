@@ -16,7 +16,11 @@ class SupabaseService @Inject constructor() {
         supabaseUrl = BuildConfig.SUPABASE_URL,
         supabaseKey = BuildConfig.SUPABASE_ANON_KEY,
     ) {
-        install(Auth)
+        install(Auth) {
+            // Where Google sign-in returns to: quoridor://login-callback (see AndroidManifest and the README).
+            scheme = "quoridor"
+            host = "login-callback"
+        }
         install(Postgrest)
         install(Realtime)
         install(Functions)

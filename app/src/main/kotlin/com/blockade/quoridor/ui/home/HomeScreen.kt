@@ -2,6 +2,9 @@ package com.blockade.quoridor.ui.home
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,12 +27,20 @@ fun HomeScreen(
     onRoomJoined: (roomId: String, playerIndex: Int) -> Unit,
     onResumeWaiting: (roomId: String, code: String) -> Unit,
     onPlayComputer: (AiDifficulty) -> Unit,
+    onOpenProfile: () -> Unit,
     vm: HomeViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
     GameBackground {
     Scaffold(containerColor = Color.Transparent) { padding ->
+        Box(Modifier.fillMaxSize()) {
+        IconButton(
+            onClick = onOpenProfile,
+            modifier = Modifier.align(Alignment.TopEnd).padding(padding).padding(8.dp),
+        ) {
+            Icon(Icons.Default.AccountCircle, contentDescription = "Profile", tint = GameTheme.colors.onSurface)
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -76,7 +87,7 @@ fun HomeScreen(
                 onClick = { vm.hostGame(onRoomCreated) },
                 enabled = !state.loading,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Host Game") }
+            ) { Text("Create Room") }
 
             Spacer(Modifier.height(24.dp))
             HorizontalDivider()
@@ -95,7 +106,7 @@ fun HomeScreen(
                 onClick = { vm.joinGame(onRoomJoined) },
                 enabled = !state.loading,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Join Game") }
+            ) { Text("Join Room") }
 
             if (state.loading) {
                 Spacer(Modifier.height(24.dp))
@@ -105,6 +116,7 @@ fun HomeScreen(
                 Spacer(Modifier.height(16.dp))
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
+        }
         }
     }
     }

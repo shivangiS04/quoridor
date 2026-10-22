@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.blockade.quoridor.data.repository.GameException
 import com.blockade.quoridor.data.repository.GameRepository
+import com.blockade.quoridor.data.repository.ProfileRepository
 import com.blockade.quoridor.domain.ai.AiDifficulty
 import com.blockade.quoridor.domain.ai.QuoridorAi
 import com.blockade.quoridor.domain.model.GameState
@@ -84,6 +85,7 @@ data class GameUiState(
 class GameViewModel @Inject constructor(
     private val repo: GameRepository,
     private val sound: SoundPlayer,
+    private val profiles: ProfileRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(GameUiState())
@@ -103,6 +105,11 @@ class GameViewModel @Inject constructor(
         updateSnapshot(MatchSnapshot(QuoridorRules.initialState(firstTurn = 0), revision = 0))
     }
 
+    /** Adds a finished game against the computer to the player's stats (best effort, ignored when offline). */
+    private fun recordAiResult(won: Boolean) {
+        viewModelScope.launch { profiles.recordAiGame(won) }
+    }
+
     /** Starts a fresh game against the same computer opponent (the "Play Again" button). */
     fun restartLocal() {
         if (!isLocal) return
@@ -118,6 +125,7 @@ class GameViewModel @Inject constructor(
             return
         }
         updateSnapshot(MatchSnapshot(next, snap.revision + 1))
+        if (next.status == "finished") recordAiResult(next.winner == _state.value.myPlayerIndex)
         if (next.status == "playing" && next.currentTurn != _state.value.myPlayerIndex) {
             val engine = ai ?: return
             viewModelScope.launch {
@@ -258,6 +266,7 @@ class GameViewModel @Inject constructor(
             val snap = _state.value.snapshot ?: return
             val me = _state.value.myPlayerIndex
             updateSnapshot(MatchSnapshot(snap.state.copy(status = "finished", winner = 1 - me), snap.revision + 1))
+            recordAiResult(won = false)
             return
         }
         submit(roomId) { rev -> repo.resign(roomId, rev) }
