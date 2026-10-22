@@ -9,6 +9,7 @@ import androidx.navigation.navArgument
 import com.blockade.quoridor.domain.ai.AiDifficulty
 import com.blockade.quoridor.ui.game.GameScreen
 import com.blockade.quoridor.ui.home.HomeScreen
+import com.blockade.quoridor.ui.profile.ProfileScreen
 import com.blockade.quoridor.ui.waiting.WaitingScreen
 
 @Composable
@@ -28,8 +29,11 @@ fun NavGraph() {
                     nav.navigate("waiting/$roomId/$code")
                 },
                 onPlayComputer = { difficulty -> nav.navigate("local/${difficulty.name}") },
+                onOpenProfile = { nav.navigate("profile") },
             )
         }
+
+        composable("profile") { ProfileScreen(onBack = { nav.popBackStack() }) }
 
         composable(
             "local/{difficulty}",
