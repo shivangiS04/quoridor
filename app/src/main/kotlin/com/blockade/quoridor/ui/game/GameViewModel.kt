@@ -28,8 +28,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-enum class InteractionMode { MOVE, WALL }
-
 data class WallPreview(val row: Int, val col: Int, val horizontal: Boolean)
 
 /** Presentation signal: the player tried an illegal wall here; [tick] changes on every attempt so the UI can re-animate. */
@@ -38,7 +36,6 @@ data class InvalidFlash(val row: Int, val col: Int, val horizontal: Boolean, val
 data class GameUiState(
     val snapshot: MatchSnapshot? = null,
     val myPlayerIndex: Int = 0,
-    val mode: InteractionMode = InteractionMode.MOVE,
     val wallHorizontal: Boolean = true,
     val wallPreview: WallPreview? = null,
     val selectedCell: Pos? = null,
@@ -51,6 +48,8 @@ data class GameUiState(
     val soundOn: Boolean = true,
     // Presentation-only state (HUD labels, win-screen stats, invalid-placement feedback).
     val vsComputer: Boolean = false,
+    /** e.g. "Computer · Easy" when playing the AI. */
+    val opponentLabel: String? = null,
     val startedAtMs: Long? = null,
     val endedAtMs: Long? = null,
     val invalidFlash: InvalidFlash? = null,
@@ -99,7 +98,7 @@ class GameViewModel @Inject constructor(
     fun initLocal(difficulty: AiDifficulty) {
         if (ai != null) return
         ai = QuoridorAi(difficulty)
-        _state.update { it.copy(myPlayerIndex = 0, vsComputer = true) }
+        _state.update { it.copy(myPlayerIndex = 0, vsComputer = true, opponentLabel = "Computer · ${difficulty.label}") }
         repo.soundEnabled.onEach { on -> _state.update { it.copy(soundOn = on) } }.launchIn(viewModelScope)
         updateSnapshot(MatchSnapshot(QuoridorRules.initialState(firstTurn = 0), revision = 0))
     }
@@ -107,7 +106,7 @@ class GameViewModel @Inject constructor(
     /** Starts a fresh game against the same computer opponent (the "Play Again" button). */
     fun restartLocal() {
         if (!isLocal) return
-        _state.update { GameUiState(myPlayerIndex = 0, soundOn = it.soundOn, vsComputer = true) }
+        _state.update { GameUiState(myPlayerIndex = 0, soundOn = it.soundOn, vsComputer = true, opponentLabel = it.opponentLabel) }
         updateSnapshot(MatchSnapshot(QuoridorRules.initialState(firstTurn = 0), revision = 0))
     }
 
@@ -191,21 +190,14 @@ class GameViewModel @Inject constructor(
         effect?.let { if (_state.value.soundOn) sound.play(it) }
     }
 
-    fun toggleMode() = _state.update {
-        it.copy(mode = if (it.mode == InteractionMode.MOVE) InteractionMode.WALL else InteractionMode.MOVE,
-            wallPreview = null, selectedCell = null)
-    }
-
-    fun toggleWallOrientation() = _state.update {
-        it.copy(wallHorizontal = !it.wallHorizontal, wallPreview = null)
+    fun setWallOrientation(horizontal: Boolean) = _state.update {
+        if (it.wallHorizontal == horizontal) it else it.copy(wallHorizontal = horizontal, wallPreview = null)
     }
 
     fun onCellTap(roomId: String, row: Int, col: Int) {
         val s = _state.value
         if (!s.isMyTurn || s.submitting || s.finished) return
-        if (s.mode == InteractionMode.MOVE) {
-            if (s.validMoves.contains(Pos(row, col))) submitMove(roomId, row, col)
-        }
+        if (s.validMoves.contains(Pos(row, col))) submitMove(roomId, row, col)
     }
 
     fun onWallSlotTap(roomId: String, wr: Int, wc: Int) {
@@ -226,7 +218,7 @@ class GameViewModel @Inject constructor(
     /** A wall was dragged onto the board and released over notch ([wr], [wc]): place it, or flash if it's illegal. */
     fun onWallDrop(roomId: String, wr: Int, wc: Int) {
         val s = _state.value
-        if (!s.isMyTurn || s.submitting || s.finished || s.mode != InteractionMode.WALL) return
+        if (!s.isMyTurn || s.submitting || s.finished) return
         val gs = s.gameState ?: return
         if (QuoridorRules.isWallValid(gs, wr, wc, s.wallHorizontal, s.myPlayerIndex)) {
             submitWall(roomId, wr, wc, s.wallHorizontal)

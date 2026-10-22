@@ -6,21 +6,21 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
 /**
- * The game is designed as a dark "night board" and does not follow the system theme or dynamic colours,
- * so that the board, pawns and walls always keep their contrast. Set [USE_LIGHT_WOOD_THEME] for the light variant.
+ * The game uses its own flat palette and does not follow the system theme or dynamic colours,
+ * so the board and pieces always keep their contrast. Set [USE_LIGHT_THEME] for the light variant.
  */
 @Composable
 fun QuoridorTheme(
-    palette: GamePalette = if (USE_LIGHT_WOOD_THEME) LightWoodPalette else NightPalette,
+    palette: GamePalette = if (USE_LIGHT_THEME) LightPalette else DarkPalette,
     content: @Composable () -> Unit,
 ) {
     val scheme = if (palette.isDark) {
         darkColorScheme(
-            primary = palette.player,
-            onPrimary = palette.groove,
+            primary = palette.onSurface,
+            onPrimary = palette.background,
             secondary = palette.opponent,
             tertiary = palette.neutralWall,
-            background = palette.backgroundTop,
+            background = palette.background,
             onBackground = palette.onSurface,
             surface = palette.surface,
             onSurface = palette.onSurface,
@@ -31,11 +31,11 @@ fun QuoridorTheme(
         )
     } else {
         lightColorScheme(
-            primary = palette.player,
-            onPrimary = palette.surface,
+            primary = palette.onSurface,
+            onPrimary = palette.background,
             secondary = palette.opponent,
             tertiary = palette.neutralWall,
-            background = palette.backgroundTop,
+            background = palette.background,
             onBackground = palette.onSurface,
             surface = palette.surface,
             onSurface = palette.onSurface,
