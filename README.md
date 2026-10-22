@@ -76,3 +76,20 @@ through the `quoridor://login-callback` link.
 - `ai_wins` comes from the device (the computer game is played locally), so it can be inflated by a modified app.
   Treat it as a casual stat; online wins are recorded by the server.
 - Signing out of a **guest** account loses its stats permanently (the guest has no password). The profile screen warns about this.
+
+## Community stats (Phase 2)
+
+- **Home screen:** "N online · X players joined" (counts up when it appears), refreshed every 30 s while visible.
+- **Presence:** while the app is on screen it calls `touch_presence()` once a minute. Someone is *online* if seen in the last 2 minutes.
+- **Counters:** `meta_stats` (one row, not readable by clients) holds `total_users` and `games_played`; clients read them only through `get_community_stats()`.
+- **Leaderboard:** `get_leaderboard()` returns the top 10 by online wins (players without an online win are not listed).
+- **Online results are recorded by the database**, exactly once, when a match first becomes `finished` (win, resignation or timeout): both players' games/wins/losses, the winner's `online_wins`, and the global counter. Only the edge functions can update `matches`, so a client cannot fake a result.
+
+### Database tests
+
+```sh
+cd supabase/tests && npm ci && npm test
+```
+
+Runs every migration in an in-memory Postgres (PGlite) with Supabase-style default grants and checks counters, presence,
+leaderboard ordering, once-only result recording and the access rules. CI runs it on every pull request.
