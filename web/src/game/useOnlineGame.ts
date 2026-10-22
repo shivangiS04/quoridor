@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type MatchRow, claimTimeout, getRoom, submitAction } from "../lib/api.ts";
+import { type MatchRow, claimTimeout, getRematchRoom, getRoom, requestRematch, submitAction } from "../lib/api.ts";
 import { ApiError, client } from "../lib/supabase.ts";
 import { deriveStats, type GameController, type WallRef } from "./controller.ts";
 import { describe, type MoveRecord } from "./history.ts";
@@ -14,7 +14,9 @@ const toMatch = (r: MatchRow): Match => ({ state: r.state, revision: r.revision,
  * listens for the match row changing (realtime, with a polling fallback) and exposes the same controller as the
  * computer game. `me` is your seat: seat 1 sees the board turned around.
  */
-export function useOnlineGame(roomId: string, me: number, initial: MatchRow, opponentName: string): GameController {
+export function useOnlineGame(
+  roomId: string, me: number, initial: MatchRow, opponentName: string, onEnterRoom: (roomId: string) => void,
+): GameController {
   const ref = useRef<Match>(toMatch(initial));
   const [match, setMatch] = useState<Match>(ref.current);
   const [history, setHistory] = useState<MoveRecord[]>([]);
@@ -26,6 +28,8 @@ export function useOnlineGame(roomId: string, me: number, initial: MatchRow, opp
   const [now, setNow] = useState(Date.now());
   const [startedAt] = useState(Date.now());
   const [endedAt, setEndedAt] = useState<number | null>(initial.state.status === "finished" ? Date.now() : null);
+  const [rematchReady, setRematchReady] = useState(false);
+  const [rematchBusy, setRematchBusy] = useState(false);
 
   const applyRow = useCallback((row: MatchRow) => {
     const prev = ref.current;
@@ -56,7 +60,8 @@ export function useOnlineGame(roomId: string, me: number, initial: MatchRow, opp
     const c = client();
     const channel = c.channel(`match-${roomId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "matches", filter: `room_id=eq.${roomId}` }, (payload) => {
-        const row = payload.new as Partial<MatchRow> | undefined;
+        const row = payload.new as (Partial<MatchRow> & { rematch_room_id?: string | null }) | undefined;
+        if (row?.rematch_room_id) setRematchReady(true);
         if (row?.state && typeof row.revision === "number") applyRow({ state: row.state, revision: row.revision, updated_at: row.updated_at ?? null });
       })
       .subscribe();
@@ -71,6 +76,16 @@ export function useOnlineGame(roomId: string, me: number, initial: MatchRow, opp
     const poll = setInterval(() => { void refresh(); }, 3000);
     return () => { clearInterval(clock); clearInterval(poll); };
   }, [status, refresh]);
+
+  // After the game: has the other player already asked for a rematch? (realtime tells us; this is the safety net)
+  useEffect(() => {
+    if (status !== "finished" || rematchReady) return;
+    let alive = true;
+    const look = () => getRematchRoom(roomId).then((id) => { if (alive && id) setRematchReady(true); }).catch(() => {});
+    void look();
+    const t = setInterval(look, 3000);
+    return () => { alive = false; clearInterval(t); };
+  }, [status, rematchReady, roomId]);
 
   useEffect(() => {
     if (!notice) return;
@@ -130,9 +145,18 @@ export function useOnlineGame(roomId: string, me: number, initial: MatchRow, opp
       .finally(() => setBusy(false));
   };
 
+  const goRematch = () => {
+    setRematchBusy(true);
+    requestRematch(roomId)
+      .then((newRoom) => onEnterRoom(newRoom))
+      .catch((e) => { setNotice(e instanceof ApiError ? e.message : "Could not start a rematch."); setRematchBusy(false); });
+  };
+
   const stats = useMemo(() => deriveStats(history, me, game.players[me].walls_left), [history, game, me]);
   return {
-    game, me, flipped: me === 1,
+    game, me, flipped: me === 1, turnSeat: game.current_turn,
+    nameOf: (seat: number) => (seat === me ? "You" : opponentName),
+    rematch: { ready: rematchReady, busy: rematchBusy, go: goRematch },
     opponentTitle: opponentName, opponentName,
     history, validMoves, myTurn, finished: game.status === "finished", won: game.winner === me,
     statusText: !myTurn && game.status === "playing" ? `Waiting for ${opponentName}…` : null,

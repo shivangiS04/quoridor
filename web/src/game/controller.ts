@@ -10,8 +10,20 @@ export interface GameController {
   me: number;
   /** Draw the board turned 180° (seat 1 sees their own pawn at the bottom). */
   flipped: boolean;
-  /** Card title, e.g. "Computer · Easy" or the other player's name. */
+  /** Whose turn it is (seat 0 or 1). */
+  turnSeat: number;
+  /** Title of the card for your own seat. Defaults to "You". */
+  selfTitle?: string;
+  /** Card title for the other seat, e.g. "Computer · Easy" or the other player's name. */
   opponentTitle: string;
+  /** What to call a seat in sentences and the move list ("You", "Computer", "Alex", "Player 2"…). */
+  nameOf: (seat: number) => string;
+  /** Overrides the default "You won / You lost" result screen (two players on one device). */
+  resultText?: { title: string; subtitle: string; tone: "won" | "lost" };
+  /** Two players on one device: turn the board towards whoever is moving. */
+  flipToggle?: { on: boolean; toggle: () => void };
+  /** Online games: rematch with the same opponent. `ready` means the other player already asked. */
+  rematch?: { ready: boolean; busy: boolean; go: () => void };
   /** Short name used in sentences, e.g. "Computer" or "Alex". */
   opponentName: string;
   history: MoveRecord[];

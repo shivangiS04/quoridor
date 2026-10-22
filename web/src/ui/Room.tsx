@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
 import { useOnlineGame } from "../game/useOnlineGame.ts";
-import { getOpponent, getRoom, type MatchRow, type RoomInfo } from "../lib/api.ts";
+import { cancelQuickMatch, getOpponent, getRoom, type MatchRow, quickMatch, type RoomInfo, touchPresence } from "../lib/api.ts";
 import { ApiError, client } from "../lib/supabase.ts";
 import { GameScreen } from "./GameScreen.tsx";
 
 export const ROOM_KEY = "quoridor.room";
 export const shareLink = (code: string) => `${window.location.origin}/join/${code}`;
 
-/** Loads a room, shows the lobby until an opponent joins, then the game. */
-export function RoomScreen({ roomId, onHome }: { roomId: string; onHome: () => void }) {
+/**
+ * Loads a room, shows the lobby until an opponent joins, then the game.
+ * `quick` rooms were opened by "Quick match": the lobby keeps looking for another waiting player.
+ */
+export function RoomScreen({ roomId, quick = false, onHome, onEnterRoom }: {
+  roomId: string; quick?: boolean; onHome: () => void; onEnterRoom: (roomId: string) => void;
+}) {
   const [info, setInfo] = useState<RoomInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,12 +43,30 @@ export function RoomScreen({ roomId, onHome }: { roomId: string; onHome: () => v
 
   if (error) return <div className="home"><div className="home-inner"><p className="warn block">{error}</p><button className="primary" onClick={onHome}>Home</button></div></div>;
   if (!info) return <div className="home"><p className="muted">Loading…</p></div>;
-  if (!info.match) return <Lobby code={info.code} onHome={onHome} />;
-  return <Playing key={roomId} roomId={roomId} me={info.player_index} match={info.match} onHome={onHome} />;
+  if (!info.match) return <Lobby code={info.code} quick={quick} roomId={roomId} onHome={onHome} onEnterRoom={onEnterRoom} />;
+  return <Playing key={roomId} roomId={roomId} me={info.player_index} match={info.match} onHome={onHome} onEnterRoom={onEnterRoom} />;
 }
 
-function Lobby({ code, onHome }: { code: string; onHome: () => void }) {
+function Lobby({ code, quick, roomId, onHome, onEnterRoom }: {
+  code: string; quick: boolean; roomId: string; onHome: () => void; onEnterRoom: (roomId: string) => void;
+}) {
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Quick match: keep looking (another waiting player may have appeared), stay "seen", and tidy up on leaving.
+  useEffect(() => {
+    if (!quick) return;
+    let alive = true;
+    const look = async () => {
+      void touchPresence();
+      try {
+        const r = await quickMatch();
+        if (alive && r.room_id !== roomId) onEnterRoom(r.room_id);
+      } catch { /* try again on the next tick */ }
+    };
+    const t = setInterval(look, 4000);
+    return () => { alive = false; clearInterval(t); void cancelQuickMatch(); };
+  }, [quick, roomId, onEnterRoom]);
+
   const link = shareLink(code);
   const copy = async (text: string, what: string) => {
     try { await navigator.clipboard.writeText(text); setCopied(what); setTimeout(() => setCopied(null), 1800); } catch { setCopied("press and hold to copy"); }
@@ -56,8 +79,9 @@ function Lobby({ code, onHome }: { code: string; onHome: () => void }) {
   return (
     <div className="home">
       <div className="home-inner">
-        <h2>Waiting for an opponent…</h2>
-        <p className="muted">Share this code or link with a friend.</p>
+        <h2>{quick ? "Looking for an opponent…" : "Waiting for an opponent…"}</h2>
+        {quick && <div className="spinner" role="status" aria-label="Searching" />}
+        <p className="muted">{quick ? "You'll be paired with the next player who searches. Or invite a friend:" : "Share this code or link with a friend."}</p>
         <div className="code" aria-label={`Room code ${code.split("").join(" ")}`}>{code}</div>
         <div className="stack">
           <button className="primary" onClick={share}>Share invite link</button>
@@ -65,13 +89,15 @@ function Lobby({ code, onHome }: { code: string; onHome: () => void }) {
         </div>
         <p className="ok small" aria-live="polite">{copied ? `Copied ${copied}` : " "}</p>
         <p className="soon">{link}</p>
-        <button className="secondary" onClick={onHome}>Back to home</button>
+        <button className="secondary" onClick={onHome}>{quick ? "Cancel" : "Back to home"}</button>
       </div>
     </div>
   );
 }
 
-function Playing({ roomId, me, match, onHome }: { roomId: string; me: number; match: MatchRow; onHome: () => void }) {
+function Playing({ roomId, me, match, onHome, onEnterRoom }: {
+  roomId: string; me: number; match: MatchRow; onHome: () => void; onEnterRoom: (roomId: string) => void;
+}) {
   const [opponent, setOpponent] = useState("Opponent");
   useEffect(() => {
     let alive = true, tries = 0;
@@ -86,7 +112,7 @@ function Playing({ roomId, me, match, onHome }: { roomId: string; me: number; ma
     return () => { alive = false; };
   }, [roomId]);
 
-  const g = useOnlineGame(roomId, me, match, opponent);
+  const g = useOnlineGame(roomId, me, match, opponent, onEnterRoom);
   const home = () => {
     if (g.finished) { try { localStorage.removeItem(ROOM_KEY); } catch { /* ignore */ } }
     onHome();

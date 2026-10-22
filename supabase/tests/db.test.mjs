@@ -13,6 +13,8 @@ const db = new PGlite();
 let failed = 0;
 const ok = (cond, msg) => { console.log((cond ? "PASS " : "FAIL ") + msg); if (!cond) failed++; };
 const q = async (sql) => (await db.query(sql)).rows;
+/** Key-order-independent JSON, so two objects compare equal if they hold the same data. */
+const canon = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 /** Run SQL as a signed-in player (row-level security and grants apply). */
 const as = async (uid, sql) => {
@@ -167,6 +169,113 @@ await db.exec("UPDATE profiles SET online_wins = 0");
 lb = (await as(id(1), "SELECT get_leaderboard() AS lb")).rows[0].lb;
 ok(Array.isArray(lb) && lb.length === 0, "empty leaderboard is an empty list, not null");
 ok(await denied(async () => { await db.exec("SET ROLE anon"); try { await db.exec("SELECT get_leaderboard()"); } finally { await db.exec("RESET ROLE"); } }), "signed-out visitors cannot read the leaderboard");
+
+
+// ---- quick match -----------------------------------------------------------------------------
+{
+  for (const n of [11, 12, 13, 14, 15, 16, 17, 18]) await db.exec(`INSERT INTO auth.users (id, is_anonymous) VALUES ('${id(n)}', true)`);
+  await db.exec("UPDATE profiles SET last_seen = now() WHERE id IN (" + [11, 12, 13, 14, 15, 16, 17, 18].map((n) => `'${id(n)}'`).join(",") + ")");
+  const qm = async (n) => (await as(id(n), "SELECT quick_match() AS r")).rows[0].r;
+  const members = async (rid) => q(`SELECT player_id, player_index FROM room_members WHERE room_id='${rid}' ORDER BY player_index`);
+  const expectedStart = (turn) => ({ players: [{ row: 8, col: 4, walls_left: 10 }, { row: 0, col: 4, walls_left: 10 }], walls: { horizontal: [], vertical: [] }, current_turn: turn, status: "playing", winner: null });
+
+  const w1 = await qm(11);
+  ok(w1.status === "waiting" && w1.player_index === 0 && /^[A-HJ-NP-Z2-9]{8}$/.test(w1.code), `with nobody waiting you open a public room: ${w1.code}`);
+  ok((await q(`SELECT is_public FROM rooms WHERE id='${w1.room_id}'`))[0].is_public === true && (await q(`SELECT count(*)::int AS n FROM matches WHERE room_id='${w1.room_id}'`))[0].n === 0, "the waiting room is public and has no match yet");
+  ok((await qm(11)).room_id === w1.room_id, "asking again while waiting returns the same room (no duplicates)");
+
+  const j = await qm(12);
+  ok(j.status === "started" && j.player_index === 1 && j.room_id === w1.room_id, "the next player is paired into the waiting room as seat 1");
+  const mem = await members(w1.room_id);
+  ok(mem.length === 2 && mem[0].player_id === id(11) && mem[1].player_id === id(12), "the room has exactly the two players, host in seat 0");
+  const m1 = (await q(`SELECT state, revision FROM matches WHERE room_id='${w1.room_id}'`))[0];
+  ok(m1.revision === 0 && [0, 1].includes(m1.state.current_turn) && canon({ ...m1.state, current_turn: 0 }) === canon(expectedStart(0)),
+    `the match starts from exactly the standard position: ${JSON.stringify(m1.state).slice(0, 100)}…`);
+
+  const w2 = await qm(13);
+  ok(w2.status === "waiting" && w2.room_id !== w1.room_id, "a third player does not join a game already in progress; they wait");
+  ok((await qm(13)).room_id === w2.room_id, "you are never paired with yourself");
+
+  // a host who has gone quiet (no heartbeat for > 90 s) is not matched
+  await db.exec(`UPDATE profiles SET last_seen = now() - interval '5 minutes' WHERE id = '${id(13)}'`);
+  const w3 = await qm(14);
+  ok(w3.status === "waiting" && w3.room_id !== w2.room_id, "a host who left (stale heartbeat) is skipped");
+  // a room that has been waiting too long is not matched, even if the host looks active
+  await db.exec(`UPDATE profiles SET last_seen = now() WHERE id = '${id(13)}'`);
+  await db.exec(`UPDATE rooms SET created_at = now() - interval '4 minutes' WHERE id = '${w2.room_id}'`);
+  await db.exec(`UPDATE profiles SET last_seen = now() WHERE id = '${id(14)}'`);
+  const j2 = await qm(15);
+  ok(j2.status === "started" && j2.room_id === w3.room_id, "an expired waiting room is skipped; the fresh one is joined");
+
+  // private rooms made with create-room are never picked up
+  const privId = id(3000);
+  await db.exec(`INSERT INTO rooms (id, code) VALUES ('${privId}', 'PRIVATE1')`);
+  await db.exec(`INSERT INTO room_members (room_id, player_id, player_index) VALUES ('${privId}', '${id(16)}', 0)`);
+  const j3 = await qm(17);
+  ok(j3.room_id !== privId && j3.status === "waiting", "a private (code-only) waiting room is never matched randomly");
+
+  // joining someone else's room removes my own now-pointless waiting room
+  const w4 = await qm(18);        // 18 is matched with waiting 17 (17 waits in a public room)
+  ok(w4.status === "started" && w4.room_id === j3.room_id, "player 18 joins the waiting player 17");
+  const w5 = await qm(11);        // 11 is in a started game but not waiting anywhere: opens a new room
+  ok(w5.status === "waiting", "a player whose previous game is running can still open a new waiting room");
+  await db.exec(`UPDATE profiles SET last_seen = now() WHERE id = '${id(16)}'`);
+  await db.exec(`UPDATE profiles SET last_seen = now() WHERE id IN ('${id(11)}')`);
+  const before = (await q(`SELECT count(*)::int AS n FROM rooms WHERE is_public AND id = '${w5.room_id}'`))[0].n;
+  await db.exec(`INSERT INTO auth.users (id, is_anonymous) VALUES ('${id(19)}', true)`);
+  await db.exec(`UPDATE profiles SET last_seen = now() WHERE id = '${id(19)}'`);
+  const w6 = await qm(19);        // 19 takes 11's waiting room
+  ok(before === 1 && w6.status === "started" && w6.room_id === w5.room_id, "a late joiner takes the waiting room");
+
+  // cancelling removes my waiting room, but never a started game or someone else's room
+  for (const n of [21, 22]) { await db.exec(`INSERT INTO auth.users (id, is_anonymous) VALUES ('${id(n)}', true)`); await db.exec(`UPDATE profiles SET last_seen = now() WHERE id = '${id(n)}'`); }
+  const waitA = await qm(21);
+  await as(id(22), "SELECT cancel_quick_match()");
+  ok((await q(`SELECT count(*)::int AS n FROM rooms WHERE id='${waitA.room_id}'`))[0].n === 1, "cancelling does not touch someone else's waiting room");
+  await as(id(21), "SELECT cancel_quick_match()");
+  ok((await q(`SELECT count(*)::int AS n FROM rooms WHERE id='${waitA.room_id}'`))[0].n === 0, "cancelling removes my own waiting room");
+  const waitB = await qm(21); await qm(22);   // 22 joins 21
+  await as(id(21), "SELECT cancel_quick_match()");
+  ok((await q(`SELECT count(*)::int AS n FROM rooms WHERE id='${waitB.room_id}'`))[0].n === 1, "cancelling never deletes a game that has started");
+  ok(await denied(async () => { await db.exec("SET ROLE anon"); try { await db.exec("SELECT cancel_quick_match()"); } finally { await db.exec("RESET ROLE"); } }), "signed-out visitors cannot cancel");
+  ok(await denied(async () => { await db.exec("SET ROLE anon"); try { await db.exec("SELECT quick_match()"); } finally { await db.exec("RESET ROLE"); } }), "signed-out visitors cannot use quick match");
+  let threw = false; try { await db.exec("SELECT set_config('request.jwt.claim.sub','',false)"); await db.exec("SET ROLE authenticated"); await db.exec("SELECT quick_match()"); } catch (e) { threw = /Not signed in/.test(e.message); } finally { await db.exec("RESET ROLE"); }
+  ok(threw, "without a user id it is refused");
+}
+
+// ---- rematch ---------------------------------------------------------------------------------
+{
+  const rid = id(3100);
+  await db.exec(`INSERT INTO rooms (id, code) VALUES ('${rid}', 'REMATCH1')`);
+  await db.exec(`INSERT INTO room_members (room_id, player_id, player_index) VALUES ('${rid}', '${id(11)}', 0), ('${rid}', '${id(12)}', 1)`);
+  await db.exec(`INSERT INTO matches (room_id, state, revision) VALUES ('${rid}', '{"status":"playing","winner":null,"current_turn":0}', 0)`);
+  const rematch = async (n, room) => (await as(id(n), `SELECT request_rematch('${room}') AS r`)).rows[0].r;
+  const err = async (n, room) => { try { await rematch(n, room); return null; } catch (e) { return e.message; } };
+
+  ok(/not finished/i.test((await err(11, rid)) ?? ""), "a rematch cannot be requested while the game is still on");
+  await db.exec(`UPDATE matches SET state = '{"status":"finished","winner":1,"current_turn":0}', revision = 5 WHERE room_id = '${rid}'`);
+  ok(/Not a room member/.test((await err(13, rid)) ?? ""), "someone who was not in the game cannot request a rematch");
+
+  const rooms0 = (await q("SELECT count(*)::int AS n FROM rooms"))[0].n;
+  const gamesBefore = (await q(`SELECT games_played FROM profiles WHERE id='${id(11)}'`))[0].games_played;
+  const nr = await rematch(11, rid);
+  ok(typeof nr === "string" && nr !== rid, "a finished game can be rematched: a new room is created");
+  ok((await q("SELECT count(*)::int AS n FROM rooms"))[0].n === rooms0 + 1, "exactly one new room");
+  const nm = await q(`SELECT player_id, player_index FROM room_members WHERE room_id = '${nr}' ORDER BY player_index`);
+  ok(nm.length === 2 && nm[0].player_id === id(12) && nm[1].player_id === id(11), "seats are swapped: the previous second player is now first");
+  const newMatch = (await q(`SELECT state, revision FROM matches WHERE room_id='${nr}'`))[0];
+  ok(newMatch.revision === 0 && canon(newMatch.state) === canon({ players: [{ row: 8, col: 4, walls_left: 10 }, { row: 0, col: 4, walls_left: 10 }], walls: { horizontal: [], vertical: [] }, current_turn: 0, status: "playing", winner: null }),
+    "the new match starts fresh from exactly the standard position, seat 0 to move");
+  ok((await q(`SELECT rematch_room_id FROM matches WHERE room_id='${rid}'`))[0].rematch_room_id === nr, "the old match points at the new room (this is how the other player finds out)");
+  ok((await rematch(12, rid)) === nr && (await rematch(11, rid)) === nr, "the other player (and repeats) get the SAME room: no duplicates");
+  ok((await q("SELECT count(*)::int AS n FROM rooms"))[0].n === rooms0 + 1, "still exactly one new room after repeated requests");
+  ok((await q(`SELECT games_played FROM profiles WHERE id='${id(11)}'`))[0].games_played === gamesBefore, "requesting a rematch does not change anyone's stats");
+  ok(/^[A-HJ-NP-Z2-9]{8}$/.test((await q(`SELECT code FROM rooms WHERE id='${nr}'`))[0].code), "the new room has a valid 8-character code");
+  const opp = (await as(id(12), `SELECT get_room_opponent('${nr}') AS o`)).rows[0].o;
+  ok(opp !== null, "both players can see each other in the new room");
+  ok(await denied(async () => { await db.exec("SET ROLE anon"); try { await db.exec(`SELECT request_rematch('${rid}')`); } finally { await db.exec("RESET ROLE"); } }), "signed-out visitors cannot request a rematch");
+  ok(/No match/.test((await err(11, id(3999))) ?? "") || /Not a room member/.test((await err(11, id(3999))) ?? ""), "an unknown room is refused");
+}
 
 // ---- Phase 1 guarantees still hold -----------------------------------------------------------
 ok(await denied(() => as(id(1), "UPDATE profiles SET online_wins = 999 WHERE id = '" + id(1) + "'")), "players still cannot write their own stats");

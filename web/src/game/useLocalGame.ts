@@ -123,7 +123,8 @@ export function useLocalGame(difficulty: Difficulty, onFinished?: (won: boolean)
 
   const stats = useMemo(() => deriveStats(history, HUMAN, game.players[HUMAN].walls_left), [history, game]);
   return {
-    game, me: HUMAN, flipped: false,
+    game, me: HUMAN, flipped: false, turnSeat: game.current_turn,
+    nameOf: (seat: number) => (seat === HUMAN ? "You" : "Computer"),
     opponentTitle: `Computer · ${DIFFICULTY_LABEL[difficulty]}`, opponentName: "Computer",
     history, validMoves, myTurn, finished: game.status === "finished", won: game.winner === HUMAN,
     statusText: thinking ? "Computer is thinking…" : null,

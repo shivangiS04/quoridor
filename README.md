@@ -131,13 +131,19 @@ npm run build          # type-checks, then builds to web/dist
 node e2e/smoke.mjs http://127.0.0.1:4173 shots   # real-browser test against `npm run preview`
 ```
 
-Status:
-- Play the computer (Easy / Medium / Hard) with tap-to-move and drag-and-drop walls. No sign-in needed.
+Status (everything below works in the browser):
+- **Play the computer** (Easy / Medium / Hard), or **two players on one device** (optionally turning the board towards whoever is moving).
+  Tap-to-move and drag-and-drop walls. No sign-in needed.
 - **Accounts:** Google or guest sign-in (a guest can link Google later and keep their stats), profile with editable name and stats.
-- **Online rooms:** create a room, share the code or the link `/join/CODE`, play in real time. Moves are validated by the server;
-  the second player sees the board turned around so their own pawn is at the bottom. Resign any time, claim a win after
-  2 minutes of the opponent's inactivity, resume an unfinished game after a reload.
-- Not yet on the web: leaderboard and "players online" counters, rematch.
+- **Play online:**
+  - **Quick match** pairs you with another player who is searching. Searches expire after 3 minutes or when the searcher goes quiet,
+    and cancelling removes your waiting room, so you are never paired with someone who left.
+  - **Create room**: share the code or the link `/join/CODE` with a friend.
+  - Real-time play; moves are validated by the server; the second player sees the board turned around so their own pawn is at the bottom.
+  - Resign any time, claim a win after 2 minutes of the opponent's inactivity, resume an unfinished game after a reload.
+  - **Rematch** with the same opponent, seats swapped (the player who moved second now moves first).
+- **Leaderboard** (top 10 by online wins) and live **"N online · X players joined"** counters.
+- **Install to home screen** (web app manifest and icons; iPhone: Share -> Add to Home Screen).
 
 ### Configuration
 
@@ -148,5 +154,5 @@ under **Supabase → Authentication → URL Configuration → Redirect URLs**, o
 
 ### Browser tests
 
-`node e2e/smoke.mjs <url> shots` plays the computer in a real browser. `node e2e/online.mjs <url> shots` runs **two browsers
-as two players against the real backend** (creates throw-away guests named "ZZ web … (delete me)"), so run it deliberately.
+`node e2e/smoke.mjs <url> shots` plays the computer and a pass-and-play game in a real browser and checks the install files. `node e2e/online.mjs <url> shots` runs **two browsers
+as two players against the real backend** (creates throw-away guests named "ZZ web … (delete me)"): moves, drag-and-drop walls on both boards, resign, **rematch**, stats, leaderboard, counters, **quick match** and cancelling a search. Run it deliberately.
