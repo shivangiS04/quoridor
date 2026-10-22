@@ -7,12 +7,13 @@ import {
   initialState,
   isWallValid,
   shortestPath,
+  TURN_TIMEOUT_MS,
   WALL_GRID,
   WALLS_PER_PLAYER,
 } from "../shared/quoridor.ts";
 
 export type { GameState };
-export { BOARD, WALL_GRID, WALLS_PER_PLAYER, getValidMoves, goalRow, initialState, isWallValid, shortestPath };
+export { BOARD, TURN_TIMEOUT_MS, WALL_GRID, WALLS_PER_PLAYER, getValidMoves, goalRow, initialState, isWallValid, shortestPath };
 
 export type Action =
   | { type: "move"; row: number; col: number }

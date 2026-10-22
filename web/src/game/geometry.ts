@@ -55,3 +55,11 @@ export function slotAt(x: number, y: number, m = metrics()): Slot {
   if (gr < 0 || gc < 0 || gr >= WALL_GRID || gc >= WALL_GRID) return null;
   return { kind: "groove", row: gr, col: gc };
 }
+
+/**
+ * The second player sees the board turned 180° so their own pawn is at the bottom. The data never changes; only
+ * what is drawn does. A cell (r, c) is drawn at (8-r, 8-c); a wall notch (r, c) at (7-r, 7-c). Both mappings are
+ * their own inverse, so the same function converts view -> logical.
+ */
+export const flipCell = (n: number, flipped: boolean) => (flipped ? BOARD - 1 - n : n);
+export const flipNotch = (n: number, flipped: boolean) => (flipped ? WALL_GRID - 1 - n : n);

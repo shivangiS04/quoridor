@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import { chooseAction, DIFFICULTIES } from "./ai.ts";
 import { describe as describeMove } from "./history.ts";
-import { metrics, nearestNotch, slotAt, SIZE } from "./geometry.ts";
+import { flipCell, flipNotch, metrics, nearestNotch, slotAt, SIZE, wallBar, wallOrigin } from "./geometry.ts";
 import { type Action, apply, getValidMoves, initialState, isWallValid, resign, type GameState } from "./rules.ts";
 
 /** Small deterministic RNG so tests are repeatable. */
@@ -144,5 +144,40 @@ describe("board geometry", () => {
     expect(slotAt(m.cell + m.gap / 2, m.cell / 2)).toEqual({ kind: "groove", row: 0, col: 0 });
     expect(slotAt(m.cell + m.gap / 2, m.cell + m.gap / 2)).toEqual({ kind: "groove", row: 0, col: 0 });
     expect(slotAt(SIZE - 1, SIZE - 1)).toEqual({ kind: "cell", row: 8, col: 8 });
+  });
+});
+
+describe("the board turned for the second player", () => {
+  const m = metrics();
+  it("flipping twice gives the original coordinates", () => {
+    for (let n = 0; n < 9; n++) expect(flipCell(flipCell(n, true), true)).toBe(n);
+    for (let n = 0; n < 8; n++) expect(flipNotch(flipNotch(n, true), true)).toBe(n);
+    expect(flipCell(3, false)).toBe(3);
+    expect(flipNotch(3, false)).toBe(3);
+  });
+  it("a flipped cell is exactly the cell rotated 180 degrees on the board", () => {
+    for (const [r, c] of [[0, 0], [8, 4], [3, 7], [5, 2]]) {
+      const x = c * m.stride, y = r * m.stride;
+      const fx = flipCell(c, true) * m.stride, fy = flipCell(r, true) * m.stride;
+      expect(fx).toBeCloseTo(SIZE - x - m.cell, 6);
+      expect(fy).toBeCloseTo(SIZE - y - m.cell, 6);
+    }
+  });
+  it("a flipped wall is exactly the wall rotated 180 degrees (both orientations, every notch)", () => {
+    for (const horizontal of [true, false]) {
+      const { w, h } = wallBar(horizontal, m);
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const o = wallOrigin(r, c, horizontal, m);
+        const f = wallOrigin(flipNotch(r, true), flipNotch(c, true), horizontal, m);
+        expect(f.x).toBeCloseTo(SIZE - o.x - w, 6);
+        expect(f.y).toBeCloseTo(SIZE - o.y - h, 6);
+      }
+    }
+  });
+  it("what the player taps on the turned board maps back to the right logical cell and notch", () => {
+    // Seat 1 taps the cell drawn at the bottom middle: that is logical row 0, col 4 (their own start).
+    const slot = slotAt(4 * m.stride + m.cell / 2, 8 * m.stride + m.cell / 2, m)!;
+    expect(slot).toEqual({ kind: "cell", row: 8, col: 4 });
+    expect([flipCell(slot.row, true), flipCell(slot.col, true)]).toEqual([0, 4]);
   });
 });
