@@ -4,6 +4,7 @@ import { flipNotch, metrics, nearestNotch, SIZE, wallBar } from "../game/geometr
 import { isWallValid } from "../game/rules.ts";
 import { setSoundEnabled, soundEnabled } from "../game/sound.ts";
 import { Board, type DragTarget } from "./Board.tsx";
+import { HelpSheet } from "./Help.tsx";
 import { ConfirmResign, HistorySheet, ResultOverlay } from "./Overlays.tsx";
 import { PlayerCard } from "./PlayerCard.tsx";
 import { WallTray } from "./WallTray.tsx";
@@ -19,6 +20,7 @@ export function GameScreen({ g, onHome }: { g: GameController; onHome: () => voi
   const [drag, setDrag] = useState<Drag | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [confirmResign, setConfirmResign] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [sound, setSound] = useState(soundEnabled);
   const opponent = g.opponentName;
   const me = g.me;
@@ -57,6 +59,7 @@ export function GameScreen({ g, onHome }: { g: GameController; onHome: () => voi
         <button className="icon" aria-label="Back to home" onClick={onHome}>←</button>
         <button className="resign" disabled={g.finished} onClick={() => setConfirmResign(true)}>⚑ Resign</button>
         <span className="spacer" />
+        <button className="icon" aria-label="How to play" title="How to play" onClick={() => setShowHelp(true)}>?</button>
         {g.flipToggle && (
           <button className={`icon${g.flipToggle.on ? " on" : ""}`} aria-pressed={g.flipToggle.on}
             aria-label="Turn the board towards the player on the move" title="Turn the board each move" onClick={g.flipToggle.toggle}>⟲</button>
@@ -114,6 +117,7 @@ export function GameScreen({ g, onHome }: { g: GameController; onHome: () => voi
       )}
       {confirmResign && <ConfirmResign who={g.nameOf(1 - actor)} onCancel={() => setConfirmResign(false)}
         onConfirm={() => { setConfirmResign(false); g.resign(); }} />}
+      {showHelp && <HelpSheet onClose={() => setShowHelp(false)} />}
       {showHistory && <HistorySheet history={g.history} nameOf={g.nameOf} isMine={(seat) => seat === me} onClose={() => setShowHistory(false)} />}
     </div>
   );
