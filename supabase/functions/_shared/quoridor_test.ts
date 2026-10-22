@@ -10,7 +10,10 @@ import {
   claimTimeout,
   GameState,
   getValidMoves,
+  goalRow,
   initialState,
+  isWallValid,
+  shortestPath,
   TURN_TIMEOUT_MS,
   WallPos,
 } from "./quoridor.ts";
@@ -283,4 +286,47 @@ Deno.test("nothing can be submitted once the match is over, not even a resignati
       "Match is not in progress",
     );
   }
+});
+
+Deno.test("goalRow: player 0 heads to row 0, player 1 to row 8", () => {
+  assertEquals(goalRow(0), 0);
+  assertEquals(goalRow(1), 8);
+});
+
+Deno.test("shortestPath on an empty board is a straight line of 9 squares", () => {
+  const p = shortestPath(makeState(), 0)!;
+  assertEquals(p.length, 9);
+  assertEquals(p[0], { row: 8, col: 4 });
+  assertEquals(p[8].row, 0);
+});
+
+Deno.test("shortestPath detours around a wall and is null when sealed", () => {
+  const detour = shortestPath(
+    makeState({
+      p0: [8, 4],
+      hw: [{ row: 7, col: 3 }, { row: 7, col: 4 }].slice(0, 1),
+    }),
+    0,
+  )!;
+  assert(detour.length >= 9);
+  const sealed = makeState({
+    p0: [8, 0],
+    hw: [0, 2, 4, 6].map((col) => ({ row: 7, col })),
+    vw: [{ row: 7, col: 7 }],
+  });
+  assertEquals(shortestPath(sealed, 0), null);
+});
+
+Deno.test("isWallValid agrees with applyAction", () => {
+  const s = makeState({ hw: [{ row: 3, col: 3 }] });
+  assertEquals(isWallValid(s, 0, 3, 4, true), false); // overlaps
+  assertEquals(isWallValid(s, 0, 3, 3, false), false); // crosses
+  assertEquals(isWallValid(s, 0, 3, 5, true), true);
+  assertEquals(isWallValid(s, 0, 8, 0, true), false); // out of bounds
+  assertEquals(isWallValid(makeState({ walls0: 0 }), 0, 3, 3, true), false); // no walls left
+  const sealing = makeState({
+    p0: [8, 0],
+    hw: [0, 2, 4, 6].map((col) => ({ row: 7, col })),
+  });
+  assertEquals(isWallValid(sealing, 0, 7, 7, false), false); // would seal the player in
 });

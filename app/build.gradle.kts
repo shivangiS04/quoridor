@@ -9,6 +9,13 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Release signing. The key lives outside the repo; point QUORIDOR_KEYSTORE_PROPERTIES at a keystore.properties
+// file (storeFile, storePassword, keyAlias, keyPassword) or put one in the project root. Never commit it.
+val keystoreProps = Properties().apply {
+    val f = System.getenv("QUORIDOR_KEYSTORE_PROPERTIES")?.let(::File) ?: rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) load(f.inputStream())
@@ -27,6 +34,25 @@ android {
 
         buildConfigField("String", "SUPABASE_URL", "\"${localProps["SUPABASE_URL"] ?: ""}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProps["SUPABASE_ANON_KEY"] ?: ""}\"")
+    }
+
+    signingConfigs {
+        if (keystoreProps.containsKey("storeFile")) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Signed only when a keystore is configured; otherwise assembleRelease produces an unsigned APK.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+            isMinifyEnabled = false
+        }
     }
 
     buildFeatures {
