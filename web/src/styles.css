@@ -119,3 +119,21 @@ a { color: var(--text); }
 .stat.wide { grid-column: span 3; }
 .stat strong { display: block; font-size: 1.5rem; } .stat span { color: var(--muted); font-size: .72rem; }
 .danger-outline { color: var(--mine); border-color: color-mix(in srgb, var(--mine) 50%, transparent); }
+
+/* ---- quick match, counters, leaderboard, pass-and-play ---- */
+.community { margin: 14px 0 0; color: var(--muted); font-size: .9rem; }
+.community strong { color: var(--text); }
+.live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--active); margin-right: 4px; vertical-align: 1px; }
+.spinner { width: 28px; height: 28px; margin: 16px auto 4px; border: 3px solid var(--outline); border-top-color: var(--text); border-radius: 50%; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.account { display: flex; gap: 8px; }
+.icon.on { background: var(--surface-high); }
+.lb-sub { margin: 0 4px 8px; }
+.lb { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lb li { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--outline); border-radius: 12px; padding: 10px 14px; }
+.lb li.me { background: var(--active-surface); border: 1.5px solid var(--active); padding: 9.5px 13.5px; }
+.rank { width: 24px; text-align: center; color: var(--muted); font-weight: 600; }
+.rank.top { color: var(--text); font-weight: 700; }
+.lb-name { flex: 1; display: grid; min-width: 0; }
+.lb-name b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-wins strong { font-size: 1.3rem; }

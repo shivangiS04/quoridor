@@ -22,6 +22,8 @@ export function GameScreen({ g, onHome }: { g: GameController; onHome: () => voi
   const [sound, setSound] = useState(soundEnabled);
   const opponent = g.opponentName;
   const me = g.me;
+  // Whoever is acting resigns: you, or (two players on one device) the player on the move.
+  const actor = g.flipToggle ? g.turnSeat : me;
 
   // A wall in the hand is dropped if the game ends or the turn passes while dragging.
   useEffect(() => { if (!g.myTurn) setDrag(null); }, [g.myTurn]);
@@ -36,15 +38,15 @@ export function GameScreen({ g, onHome }: { g: GameController; onHome: () => voi
     // nearestNotch works in what is drawn; the rules work in logical coordinates (they differ when the board is turned).
     const view = nearestNotch(ax, ay, metricsOnce);
     const row = flipNotch(view.row, g.flipped), col = flipNotch(view.col, g.flipped);
-    return { row, col, horizontal: drag.horizontal, valid: isWallValid(g.game, me, row, col, drag.horizontal) };
-  }, [drag, g.game, g.flipped, me]);
+    return { row, col, horizontal: drag.horizontal, valid: isWallValid(g.game, g.turnSeat, row, col, drag.horizontal) };
+  }, [drag, g.game, g.flipped, g.turnSeat]);
 
   const lastWall = g.history.at(-1)?.wall ?? null;
-  const canPlaceWall = g.myTurn && !g.busy && g.game.players[me].walls_left > 0;
+  const canPlaceWall = g.myTurn && !g.busy && g.game.players[g.turnSeat].walls_left > 0;
   const lastText = g.statusText
     ?? (g.history.length === 0 ? "No moves yet"
       : g.history.at(-1)!.gameEnd ? "Game over"
-      : `${g.history.length}. ${g.history.at(-1)!.player === me ? "You" : opponent}: ${g.history.at(-1)!.text}`);
+      : `${g.history.length}. ${g.nameOf(g.history.at(-1)!.player)}: ${g.history.at(-1)!.text}`);
 
   const rect = svgRef.current?.getBoundingClientRect();
   const heldSize = rect && drag ? (() => { const b = wallBar(drag.horizontal, metricsOnce); const k = rect.width / SIZE; return { w: b.w * k, h: b.h * k }; })() : null;
@@ -55,15 +57,19 @@ export function GameScreen({ g, onHome }: { g: GameController; onHome: () => voi
         <button className="icon" aria-label="Back to home" onClick={onHome}>←</button>
         <button className="resign" disabled={g.finished} onClick={() => setConfirmResign(true)}>⚑ Resign</button>
         <span className="spacer" />
+        {g.flipToggle && (
+          <button className={`icon${g.flipToggle.on ? " on" : ""}`} aria-pressed={g.flipToggle.on}
+            aria-label="Turn the board towards the player on the move" title="Turn the board each move" onClick={g.flipToggle.toggle}>⟲</button>
+        )}
         <button className="icon" aria-label={sound ? "Mute" : "Unmute"} onClick={() => { setSound(!sound); setSoundEnabled(!sound); }}>
           {sound ? "🔊" : "🔇"}
         </button>
       </header>
 
       <div className="cards">
-        <PlayerCard name="You" tone="mine" wallsLeft={g.game.players[me].walls_left} active={g.myTurn} />
+        <PlayerCard name={g.selfTitle ?? "You"} tone="mine" wallsLeft={g.game.players[me].walls_left} active={!g.finished && g.turnSeat === me} />
         <PlayerCard name={g.opponentTitle} tone="theirs" wallsLeft={g.game.players[1 - me].walls_left}
-          active={!g.myTurn && !g.finished} />
+          active={!g.finished && g.turnSeat === 1 - me} />
       </div>
 
       <button className="strip" onClick={() => setShowHistory(true)} aria-label={`${lastText}. Open move history`}>{lastText}</button>
@@ -98,12 +104,17 @@ export function GameScreen({ g, onHome }: { g: GameController; onHome: () => voi
       )}
 
       {g.finished && (
-        <ResultOverlay won={g.won} opponent={opponent} moves={g.myTurnsTaken} walls={g.wallsUsed} seconds={g.elapsedSeconds}
-          onPlayAgain={g.playAgain} onHome={onHome} />
+        <ResultOverlay
+          title={g.resultText?.title ?? (g.won ? "You won" : "You lost")}
+          subtitle={g.resultText?.subtitle ?? (g.won ? "You reached the other side." : `${opponent} reached the other side.`)}
+          tone={g.resultText?.tone ?? (g.won ? "won" : "lost")}
+          moves={g.myTurnsTaken} walls={g.wallsUsed} seconds={g.elapsedSeconds} opponent={opponent}
+          onPlayAgain={g.playAgain} onRematch={g.rematch?.go} rematchReady={g.rematch?.ready} rematchBusy={g.rematch?.busy}
+          onHome={onHome} />
       )}
-      {confirmResign && <ConfirmResign opponent={opponent} onCancel={() => setConfirmResign(false)}
+      {confirmResign && <ConfirmResign who={g.nameOf(1 - actor)} onCancel={() => setConfirmResign(false)}
         onConfirm={() => { setConfirmResign(false); g.resign(); }} />}
-      {showHistory && <HistorySheet history={g.history} opponent={opponent} onClose={() => setShowHistory(false)} />}
+      {showHistory && <HistorySheet history={g.history} nameOf={g.nameOf} isMine={(seat) => seat === me} onClose={() => setShowHistory(false)} />}
     </div>
   );
 }

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Difficulty } from "./game/ai.ts";
 import { useLocalGame } from "./game/useLocalGame.ts";
-import { createRoom, getRoom, joinRoom, recordAiGame } from "./lib/api.ts";
+import { useLocalPvP } from "./game/useLocalPvP.ts";
+import { type CommunityStats, createRoom, getCommunityStats, getRoom, joinRoom, quickMatch, recordAiGame } from "./lib/api.ts";
+import { usePresence } from "./lib/hooks.ts";
 import { useAuth } from "./lib/auth.tsx";
 import { onlineConfigured } from "./lib/supabase.ts";
 import { GameScreen } from "./ui/GameScreen.tsx";
 import { Home } from "./ui/Home.tsx";
+import { LeaderboardScreen } from "./ui/Leaderboard.tsx";
 import { ProfileScreen } from "./ui/Profile.tsx";
 import { ROOM_KEY, RoomScreen } from "./ui/Room.tsx";
 import { SignIn } from "./ui/SignIn.tsx";
@@ -14,11 +17,13 @@ type Screen =
   | { name: "home" }
   | { name: "signin"; reason: string }
   | { name: "local"; difficulty: Difficulty }
-  | { name: "room"; roomId: string }
-  | { name: "profile" };
+  | { name: "pvp" }
+  | { name: "room"; roomId: string; quick: boolean }
+  | { name: "profile" }
+  | { name: "leaderboard" };
 
 /** Something that needs an account; remembered across the Google redirect. */
-type Intent = { type: "create" } | { type: "join"; code: string };
+type Intent = { type: "create" } | { type: "quick" } | { type: "join"; code: string };
 const INTENT_KEY = "quoridor.intent";
 const read = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const write = (k: string, v: string | null) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* private mode */ } };
@@ -39,7 +44,12 @@ export default function App() {
   const setIntent = (i: Intent | null) => { setIntentState(i); write(INTENT_KEY, i ? JSON.stringify(i) : null); };
   const running = useRef(false);
 
-  const enterRoom = (roomId: string) => { write(ROOM_KEY, roomId); setResumeId(null); setScreen({ name: "room", roomId }); };
+  const [stats, setStats] = useState<CommunityStats | null>(null);
+  usePresence(Boolean(auth.user));
+
+  const enterRoom = useCallback((roomId: string, quick = false) => {
+    write(ROOM_KEY, roomId); setResumeId(null); setScreen({ name: "room", roomId, quick });
+  }, []);
 
   const perform = useCallback(async (i: Intent) => {
     if (running.current) return;
@@ -47,6 +57,7 @@ export default function App() {
     setBusy(true); setError(null);
     try {
       if (i.type === "create") enterRoom((await createRoom()).room_id);
+      else if (i.type === "quick") { const r = await quickMatch(); enterRoom(r.room_id, r.status === "waiting"); }
       else enterRoom((await joinRoom(i.code)).room_id);
       setIntent(null);
     } catch (e) {
@@ -56,13 +67,13 @@ export default function App() {
     }
     setBusy(false);
     running.current = false;
-  }, []);
+  }, [enterRoom]);
 
   // A pending intent runs as soon as there is a signed-in user; without one, ask the player to sign in first.
   useEffect(() => {
     if (!onlineConfigured || !auth.ready || !intent) return;
     if (auth.user) void perform(intent);
-    else if (screen.name !== "signin") setScreen({ name: "signin", reason: intent.type === "join" ? "Sign in to join your friend's game." : "Sign in to play online." });
+    else if (screen.name !== "signin") setScreen({ name: "signin", reason: intent.type === "join" ? "Sign in to join your friend's game." : intent.type === "quick" ? "Sign in to be matched with another player." : "Sign in to play online." });
   }, [auth.ready, auth.user, intent, perform, screen.name]);
 
   // Signing in from the sign-in screen without a pending intent goes back to the home screen.
@@ -82,13 +93,28 @@ export default function App() {
     return () => { alive = false; };
   }, [auth.user, screen.name]);
 
+  // The "N online / X joined" counters, refreshed while the home screen is open.
+  useEffect(() => {
+    if (!onlineConfigured || !auth.user || screen.name !== "home") return;
+    let alive = true;
+    const load = () => getCommunityStats().then((s) => { if (alive) setStats(s); }).catch(() => {});
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [auth.user, screen.name]);
+
   if (!auth.ready) return <div className="home"><p className="muted">Loading…</p></div>;
 
   switch (screen.name) {
     case "local":
       return <LocalGame key={screen.difficulty} difficulty={screen.difficulty} onHome={() => setScreen({ name: "home" })} />;
+    case "pvp":
+      return <PvPGame onHome={() => setScreen({ name: "home" })} />;
     case "room":
-      return <RoomScreen roomId={screen.roomId} onHome={() => setScreen({ name: "home" })} />;
+      return <RoomScreen key={screen.roomId} roomId={screen.roomId} quick={screen.quick} onHome={() => setScreen({ name: "home" })}
+        onEnterRoom={(id) => enterRoom(id)} />;
+    case "leaderboard":
+      return auth.user ? <LeaderboardScreen onBack={() => setScreen({ name: "home" })} /> : null;
     case "profile":
       return auth.user ? <ProfileScreen onBack={() => setScreen({ name: "home" })} /> : null;
     case "signin":
@@ -100,16 +126,24 @@ export default function App() {
           guest={auth.isGuest}
           busy={busy}
           error={error}
+          stats={stats}
           resume={Boolean(resumeId)}
           onResume={() => resumeId && enterRoom(resumeId)}
           onPlay={(difficulty) => setScreen({ name: "local", difficulty })}
+          onPvP={() => setScreen({ name: "pvp" })}
           onProfile={() => setScreen({ name: "profile" })}
+          onLeaderboard={() => (auth.user ? setScreen({ name: "leaderboard" }) : setScreen({ name: "signin", reason: "Sign in to see the leaderboard." }))}
+          onQuick={() => { setError(null); if (auth.user) void perform({ type: "quick" }); else setIntent({ type: "quick" }); }}
           onSignIn={() => setScreen({ name: "signin", reason: "Sign in to play online and keep your stats." })}
           onCreate={() => { setError(null); if (auth.user) void perform({ type: "create" }); else setIntent({ type: "create" }); }}
           onJoin={(code) => { setError(null); if (auth.user) void perform({ type: "join", code }); else setIntent({ type: "join", code }); }}
         />
       );
   }
+}
+
+function PvPGame({ onHome }: { onHome: () => void }) {
+  return <GameScreen g={useLocalPvP()} onHome={onHome} />;
 }
 
 function LocalGame({ difficulty, onHome }: { difficulty: Difficulty; onHome: () => void }) {

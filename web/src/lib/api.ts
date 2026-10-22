@@ -59,3 +59,24 @@ export async function renameProfile(userId: string, name: string): Promise<void>
 export async function recordAiGame(won: boolean): Promise<void> {
   try { await rpc("record_ai_game", { won }); } catch { /* ignore */ }
 }
+
+// ---- quick match, rematch, community ---------------------------------------------------------
+
+export interface QuickMatchResult { room_id: string; player_index: number; status: "waiting" | "started"; code?: string }
+export const quickMatch = () => rpc<QuickMatchResult>("quick_match");
+export const cancelQuickMatch = async () => { try { await rpc("cancel_quick_match"); } catch { /* best effort */ } };
+export const requestRematch = (roomId: string) => rpc<string>("request_rematch", { p_room_id: roomId });
+
+/** The room the players moved to for a rematch, once someone has asked for one. */
+export async function getRematchRoom(roomId: string): Promise<string | null> {
+  const { data, error } = await client().from("matches").select("rematch_room_id").eq("room_id", roomId).maybeSingle();
+  if (error) throw new ApiError(error.message);
+  return (data?.rematch_room_id as string | null | undefined) ?? null;
+}
+
+export interface CommunityStats { online_count: number; total_users: number; games_played: number }
+export interface LeaderboardEntry { id: string; display_name: string; photo_url: string | null; online_wins: number; games_played: number }
+export const getCommunityStats = () => rpc<CommunityStats>("get_community_stats");
+export const getLeaderboard = (limit = 10) => rpc<LeaderboardEntry[]>("get_leaderboard", { limit_n: limit });
+/** "I'm here" for the online counter. Best effort. */
+export const touchPresence = async () => { try { await rpc("touch_presence"); } catch { /* offline is fine */ } };

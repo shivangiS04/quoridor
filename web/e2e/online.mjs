@@ -152,7 +152,12 @@ await first.page.screenshot({ path: `${shots}/o6-wall-first.png` }); await secon
 await first.page.waitForFunction(() => document.querySelector(".card.active")?.textContent?.startsWith("You"), null, { timeout: 8000 });
 const occ = await notchPos(first, seatOnTurn, 4, 3);
 await first.page.mouse.click(occ.x, occ.y);
-await first.page.waitForSelector(".warn", { timeout: 3000 });
+await first.page.waitForSelector(".warn", { timeout: 3000 }).catch(async (e) => {
+  console.log("DEBUG strip:", await first.page.locator(".strip").innerText(), "| active card:", (await first.page.locator(".card.active").allInnerTexts()).join(" / "),
+    "| walls:", await first.page.locator("rect.wall").count(), "| seat:", seatOnTurn, "| click at", Math.round(occ.x), Math.round(occ.y));
+  await first.page.screenshot({ path: `${shots}/debug-warn.png` });
+  throw e;
+});
 ok((await first.page.locator(".warn").innerText()).includes("Invalid wall placement"), "an illegal wall is refused with a message");
 
 // history sheet on the second player's side lists both moves
@@ -160,6 +165,13 @@ await second.page.locator(".strip").click();
 await second.page.waitForSelector(".sheet");
 ok((await second.page.locator(".sheet li").count()) >= 2, "the history sheet lists the moves played online");
 await second.page.locator(".sheet-wrap").click({ position: { x: 10, y: 10 } });
+// seat 1 (B) must see their OWN moves as "You" (red) and the host's as the host's name (blue); this used to be inverted
+await B.page.locator(".strip").click();
+await B.page.waitForSelector(".sheet");
+const mineLabels = await B.page.locator(".sheet li b.mine").allInnerTexts(), theirLabels = await B.page.locator(".sheet li b.theirs").allInnerTexts();
+ok(mineLabels.length >= 1 && mineLabels.every((t) => t === "You") && theirLabels.length >= 1 && theirLabels.every((t) => t.includes("ZZ web A")),
+  `the second player's history reads correctly: yours = ${JSON.stringify(mineLabels)}, theirs = ${JSON.stringify(theirLabels)}`);
+await B.page.locator(".sheet-wrap").click({ position: { x: 10, y: 10 } });
 
 // ------------------------------------------------------------------ the player NOT on turn resigns (must be allowed)
 const loser = (await first.page.locator(".card.active").first().innerText()).startsWith("You") ? second : first;
@@ -172,6 +184,32 @@ ok(true, `resigning ends the game for both: ${loser.name} sees "You lost", ${win
 await winner.page.screenshot({ path: `${shots}/o8-won.png` });
 ok((await winner.page.locator(".modal").innerText()).includes("Moves"), "the result screen shows the game's stats");
 
+// ------------------------------------------------------------------ rematch: seats are swapped
+await loser.page.getByRole("button", { name: "Rematch" }).click();
+await winner.page.getByText(/wants a rematch/).waitFor({ timeout: 12000 });
+ok(true, "the winner's result screen says the opponent wants a rematch");
+await winner.page.screenshot({ path: `${shots}/o9-rematch-offer.png` });
+await winner.page.getByRole("button", { name: "Accept rematch" }).click();
+// a brand-new game: the result screen is gone and nothing has been played (the player waiting for their turn sees "Waiting for …")
+const fresh = () => !document.querySelector(".modal h2") && /^(No moves yet|Waiting for)/.test(document.querySelector(".strip")?.textContent ?? "");
+await loser.page.waitForFunction(fresh, null, { timeout: 15000 });
+await winner.page.waitForFunction(fresh, null, { timeout: 15000 });
+ok(true, "both players land in a new game");
+// the player who was seat 1 is now seat 0 and moves first
+const newFirst = (A.page === loser.page ? (loser === A ? A : B) : null);
+const wasSeat1 = (p) => p === B ? "B" : "A"; // B joined second, so B was seat 1
+ok((await B.page.locator(".card.active").innerText()).startsWith("You") && !(await A.page.locator(".card.active").first().innerText()).startsWith("You"),
+  "seats are swapped: B (second player before) now moves first");
+ok((await pawnY(A, "mine")) > (await pawnY(A, "theirs")) && (await pawnY(B, "mine")) > (await pawnY(B, "theirs")), "each player still sees their own pawn at the bottom");
+await A.page.screenshot({ path: `${shots}/o10-rematch-game.png` });
+// the same player resigns again, so the same player wins both games
+await loser.page.getByRole("button", { name: /Resign/ }).click();
+await loser.page.getByRole("button", { name: "Resign", exact: true }).last().click();
+await loser.page.waitForSelector(".modal h2.lost", { timeout: 10000 });
+await winner.page.waitForSelector(".modal h2.won", { timeout: 10000 });
+ok(true, "the rematch is a real, separate game that can be resigned too");
+void newFirst; void wasSeat1;
+
 // results are recorded on the profiles
 await winner.page.getByRole("button", { name: "Home", exact: true }).click();
 ok(await winner.page.getByRole("button", { name: "Resume game" }).count() === 0, "a finished game is no longer offered for resume");
@@ -179,15 +217,72 @@ await winner.page.getByRole("button", { name: /Profile/ }).click();
 await winner.page.getByText("Online wins").waitFor();
 const stat = async (p, label) => Number(await p.page.locator(".stat", { hasText: label }).first().locator("strong").innerText());
 await winner.page.waitForTimeout(500);
-ok((await stat(winner, "Online wins")) === 1 && (await stat(winner, "Wins")) >= 1 && (await stat(winner, "Games")) === 1, "the winner's profile shows 1 game, 1 win, 1 online win");
+ok((await stat(winner, "Online wins")) === 2 && (await stat(winner, "Wins")) >= 2 && (await stat(winner, "Games")) === 2, "the winner's profile shows 2 games, 2 wins, 2 online wins (original + rematch)");
+// counters and leaderboard (the winner has 2 online wins now)
+await winner.page.getByRole("button", { name: "Back" }).click();
+await winner.page.waitForSelector(".community", { timeout: 10000 });
+await winner.page.waitForTimeout(1300); // let the numbers finish counting up
+const community = await winner.page.locator(".community").innerText();
+const nums = community.match(/\d+/g).map(Number);
+ok(/online/.test(community) && /joined/.test(community) && nums[0] >= 2 && nums[1] >= nums[0], `home shows live counters: "${community.trim()}"`);
+await winner.page.screenshot({ path: `${shots}/o11-home-counters.png` });
+await winner.page.getByRole("button", { name: "Leaderboard" }).click();
+await winner.page.waitForSelector(".lb li.me", { timeout: 10000 });
+const meRow = await winner.page.locator(".lb li.me").innerText();
+ok(/\(you\)/.test(meRow) && /2\s*wins/.test(meRow.replace(/\n/g, " ")), `the leaderboard lists you with 2 wins: "${meRow.replace(/\n/g, " | ")}"`);
+await winner.page.screenshot({ path: `${shots}/o12-leaderboard.png` });
+await winner.page.getByRole("button", { name: "Back" }).click();
 await loser.page.getByRole("button", { name: "Home", exact: true }).click();
 await loser.page.getByRole("button", { name: /Profile/ }).click();
 await loser.page.getByText("Online wins").waitFor();
 await loser.page.waitForTimeout(500);
-ok((await stat(loser, "Losses")) === 1 && (await stat(loser, "Online wins")) === 0, "the loser's profile shows 1 loss");
+ok((await stat(loser, "Losses")) === 2 && (await stat(loser, "Online wins")) === 0, "the loser's profile shows 2 losses");
 await loser.page.getByRole("button", { name: "Sign out" }).click();
 await loser.page.getByRole("button", { name: "Sign in" }).waitFor({ timeout: 8000 });
 ok(true, "Sign out returns to the signed-out home screen");
+
+// ------------------------------------------------------------------ quick match: two strangers are paired
+const E = await newPlayer("E"), F = await newPlayer("F");
+await E.page.goto(base);
+await E.page.getByRole("button", { name: "Quick match" }).click();
+await E.page.getByText("Sign in to be matched with another player.").waitFor({ timeout: 8000 });
+await E.page.getByRole("button", { name: "Play as guest" }).click();
+await E.page.getByText("Looking for an opponent").waitFor({ timeout: 20000 });
+ok(true, "Quick match asks you to sign in, then shows a searching lobby");
+await guestRename(E, "ZZ web E (delete me)");
+await F.page.goto(base);
+await F.page.getByRole("button", { name: "Sign in" }).click();
+await F.page.getByRole("button", { name: "Play as guest" }).click();
+await F.page.getByRole("button", { name: /Profile/ }).waitFor({ timeout: 20000 });
+await guestRename(F, "ZZ web F (delete me)");
+await F.page.getByRole("button", { name: "Quick match" }).click();
+await F.page.waitForSelector("svg.board", { timeout: 20000 });
+await E.page.waitForSelector("svg.board", { timeout: 20000 });
+ok(true, "the second searcher is paired instantly, and the first one's search turns into the game by itself");
+await E.page.waitForTimeout(1800); await F.page.waitForTimeout(500);
+ok((await E.page.locator(".card").nth(1).innerText()).includes("ZZ web F") && (await F.page.locator(".card").nth(1).innerText()).includes("ZZ web E"), "both see their random opponent's name");
+await E.page.screenshot({ path: `${shots}/o13-quick-match.png` });
+await F.page.getByRole("button", { name: /Resign/ }).click();
+await F.page.getByRole("button", { name: "Resign", exact: true }).last().click();
+await E.page.waitForSelector(".modal h2.won", { timeout: 10000 });
+ok(true, "the quick-match game plays and ends like any other");
+await E.ctx.close(); await F.ctx.close();
+
+// cancelling a search removes your waiting room, so the next searcher is NOT paired with someone who left
+const G = await newPlayer("G"), H = await newPlayer("H");
+await G.page.goto(base); await G.page.getByRole("button", { name: "Quick match" }).click();
+await G.page.getByRole("button", { name: "Play as guest" }).click();
+await G.page.getByText("Looking for an opponent").waitFor({ timeout: 20000 });
+await G.page.getByRole("button", { name: "Cancel" }).click();
+await G.page.getByRole("button", { name: "Quick match" }).waitFor({ timeout: 8000 });
+ok(true, "Cancel returns to the home screen");
+await H.page.goto(base); await H.page.getByRole("button", { name: "Quick match" }).click();
+await H.page.getByRole("button", { name: "Play as guest" }).click();
+await H.page.getByText("Looking for an opponent").waitFor({ timeout: 20000 });
+await H.page.waitForTimeout(6000);
+ok((await H.page.locator("svg.board").count()) === 0 && (await H.page.getByText("Looking for an opponent").count()) === 1, "the next searcher keeps waiting: nobody was paired with the player who cancelled");
+await H.page.getByRole("button", { name: "Cancel" }).click();
+await G.ctx.close(); await H.ctx.close();
 
 // ------------------------------------------------------------------ Google button starts the OAuth redirect
 const D = await newPlayer("D");
