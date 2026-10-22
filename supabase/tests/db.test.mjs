@@ -132,6 +132,24 @@ ok((await q(`SELECT state->>'status' AS s FROM matches WHERE room_id='${E}'`))[0
 ok(rejected, "a client cannot insert a match");
 ok(JSON.stringify([await stats(id(2)), await stats(id(3))]) === statsBefore, "and none of that changed anyone's stats");
 
+// ---- room opponent lookup --------------------------------------------------------------------
+{
+  await db.exec(`UPDATE profiles SET display_name = 'Alice', photo_url = 'https://x/a.png' WHERE id = '${id(1)}'`);
+  await db.exec(`UPDATE profiles SET display_name = 'Bob' WHERE id = '${id(2)}'`);
+  const rid = id(2000);
+  await db.exec(`INSERT INTO rooms (id, code) VALUES ('${rid}', 'OPP1')`);
+  await db.exec(`INSERT INTO room_members (room_id, player_id, player_index) VALUES ('${rid}', '${id(1)}', 0)`);
+  const opp = async (uid) => (await as(uid, `SELECT get_room_opponent('${rid}') AS o`)).rows[0].o;
+  ok((await opp(id(1))) === null, "no opponent yet while the room is still waiting");
+  await db.exec(`INSERT INTO room_members (room_id, player_id, player_index) VALUES ('${rid}', '${id(2)}', 1)`);
+  const forHost = await opp(id(1)), forGuest = await opp(id(2));
+  ok(forHost?.display_name === "Bob" && forHost.photo_url === null, `host sees the guest: ${JSON.stringify(forHost)}`);
+  ok(forGuest?.display_name === "Alice" && forGuest.photo_url === "https://x/a.png", `guest sees the host: ${JSON.stringify(forGuest)}`);
+  ok(Object.keys(forHost).sort().join() === "display_name,photo_url", "only name and photo are exposed (no ids, no email)");
+  ok((await opp(id(3))) === null, "someone who is not in the room learns nothing");
+  ok(await denied(async () => { await db.exec("SET ROLE anon"); try { await db.exec(`SELECT get_room_opponent('${rid}')`); } finally { await db.exec("RESET ROLE"); } }), "signed-out visitors cannot call it");
+}
+
 // ---- leaderboard -----------------------------------------------------------------------------
 await db.exec(`UPDATE profiles SET online_wins = 0`);
 await db.exec(`UPDATE profiles SET online_wins = 5, games_played = 9, display_name = 'Five' WHERE id = '${id(1)}'`);

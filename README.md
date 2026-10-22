@@ -131,5 +131,22 @@ npm run build          # type-checks, then builds to web/dist
 node e2e/smoke.mjs http://127.0.0.1:4173 shots   # real-browser test against `npm run preview`
 ```
 
-Status: play the computer (Easy / Medium / Hard) with tap-to-move and drag-and-drop walls. Sign-in, online rooms and the
-leaderboard use the same Supabase backend as the Android app and come next.
+Status:
+- Play the computer (Easy / Medium / Hard) with tap-to-move and drag-and-drop walls. No sign-in needed.
+- **Accounts:** Google or guest sign-in (a guest can link Google later and keep their stats), profile with editable name and stats.
+- **Online rooms:** create a room, share the code or the link `/join/CODE`, play in real time. Moves are validated by the server;
+  the second player sees the board turned around so their own pawn is at the bottom. Resign any time, claim a win after
+  2 minutes of the opponent's inactivity, resume an unfinished game after a reload.
+- Not yet on the web: leaderboard and "players online" counters, rematch.
+
+### Configuration
+
+Copy `web/.env.example` to `web/.env.local` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the same public
+values the Android app uses). Without them the build still works but online features are hidden. In production set the same
+two variables in the host. Also add your site address (e.g. `https://your-site.vercel.app/**` and `http://localhost:5173/**`)
+under **Supabase → Authentication → URL Configuration → Redirect URLs**, or Google sign-in will not return to the site.
+
+### Browser tests
+
+`node e2e/smoke.mjs <url> shots` plays the computer in a real browser. `node e2e/online.mjs <url> shots` runs **two browsers
+as two players against the real backend** (creates throw-away guests named "ZZ web … (delete me)"), so run it deliberately.

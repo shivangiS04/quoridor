@@ -11,6 +11,7 @@
     "sync-rules": "node scripts/sync-rules.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.109.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

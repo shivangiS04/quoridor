@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { MoveRecord } from "../game/history.ts";
 
 export function ResultOverlay({ won, opponent, moves, walls, seconds, onPlayAgain, onHome }: {
-  won: boolean; opponent: string; moves: number; walls: number; seconds: number; onPlayAgain: () => void; onHome: () => void;
+  won: boolean; opponent: string; moves: number; walls: number; seconds: number; onPlayAgain?: () => void; onHome: () => void;
 }) {
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label={won ? "You won" : "You lost"}>
@@ -14,8 +14,8 @@ export function ResultOverlay({ won, opponent, moves, walls, seconds, onPlayAgai
           <div><strong>{walls}</strong><span>Walls used</span></div>
           <div><strong>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</strong><span>Time</span></div>
         </div>
-        <button className="primary" onClick={onPlayAgain}>Play again</button>
-        <button className="secondary" onClick={onHome}>Home</button>
+        {onPlayAgain && <button className="primary" onClick={onPlayAgain}>Play again</button>}
+        <button className={onPlayAgain ? "secondary" : "primary"} onClick={onHome}>Home</button>
       </div>
     </div>
   );
