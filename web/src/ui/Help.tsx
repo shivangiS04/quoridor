@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { TURN_TIMEOUT_MS } from "../game/rules.ts";
+import { GAME_TIME_MS } from "../game/rules.ts";
 import { onlineConfigured } from "../lib/supabase.ts";
 
 // ---------------------------------------------------------------------------------------------
@@ -118,7 +118,7 @@ export function HelpContent() {
           <dt>White-outlined squares</dt><dd>Squares your pawn can move to right now. They only show on your turn.</dd>
           <dt>Dashed bar</dt><dd>A <b>preview</b> of where a wall would go. A <b>red</b> dashed bar means the spot is allowed; an <b>orange</b> bar means "not allowed here".</dd>
           <dt>Horizontal / Vertical</dt><dd>The two wall pieces at the bottom. See "How to place a wall" below.</dd>
-          <dt>"time left" line (online)</dt><dd>Each turn has a {TURN_TIMEOUT_MS / 60000}-minute limit. If your opponent goes quiet for {TURN_TIMEOUT_MS / 60000} minutes, a <b>"claim win"</b> button appears for you.</dd>
+          <dt>"time left" line (online)</dt><dd>Each player has {GAME_TIME_MS / 60000} minutes for the entire game. Your clock runs only on your turn and resumes with your remaining time. When your opponent runs out of time, a <b>"claim win"</b> button appears for you.</dd>
           <dt>Result screen</dt><dd>Shows who won plus moves, walls used and time. <b>Play again</b> (computer / one device), <b>Rematch</b> (online) or <b>Home</b>.</dd>
         </dl>
       </Section>
@@ -172,7 +172,7 @@ export function HelpContent() {
         <dl className="defs">
           <dt>I can't see any outlined squares.</dt><dd>It isn't your turn yet, or the game has ended. Look for the green border on your card.</dd>
           <dt>Why was my wall refused?</dt><dd>It overlaps or crosses another wall, or it would completely seal off a pawn. Try a different spot or direction.</dd>
-          <dt>My opponent disappeared.</dt><dd>After {TURN_TIMEOUT_MS / 60000} minutes of their turn, tap <b>claim win</b>. You can also resign and start a new game.</dd>
+          <dt>My opponent disappeared.</dt><dd>When their remaining game time reaches zero, tap <b>claim win</b>. You can also resign and start a new game.</dd>
           <dt>I closed the tab in the middle of a game.</dt><dd>Open the site again and tap <b>Resume game</b>.</dd>
           <dt>How do I look at earlier moves?</dt><dd>Tap the line under the cards for the full move list.</dd>
         </dl>

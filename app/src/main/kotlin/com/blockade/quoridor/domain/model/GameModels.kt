@@ -26,13 +26,14 @@ data class GameState(
     @SerialName("current_turn") val currentTurn: Int,
     val status: String,
     val winner: Int? = null,
+    @SerialName("remaining_ms") val remainingMs: List<Long>? = null,
 )
 
 @Serializable
 data class MatchSnapshot(
     val state: GameState,
     val revision: Int,
-    /** Server time (epoch ms) of the last accepted action; drives the turn timer. */
+    /** Server time (epoch ms) of the last accepted action; anchors the active player’s game clock. */
     @kotlinx.serialization.Transient val updatedAtMs: Long? = null,
 )
 

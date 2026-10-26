@@ -6,8 +6,10 @@ export const BOARD = 9;
 export const WALL_GRID = 8;
 export const WALLS_PER_PLAYER = 10;
 
-/** A player who has not moved within this window can be forfeited by the opponent. */
-export const TURN_TIMEOUT_MS = 120_000;
+/** Total thinking time per player for the entire online game. */
+export const GAME_TIME_MS = 120_000;
+// Kept for clients built against the old name.
+export const TURN_TIMEOUT_MS = GAME_TIME_MS;
 
 export interface Pos { row: number; col: number }
 export interface WallPos { row: number; col: number }
@@ -29,6 +31,8 @@ export interface GameState {
   current_turn: number;
   status: "waiting" | "playing" | "finished";
   winner: number | null;
+  /** Stored balances at updated_at; only current_turn runs between actions. Optional for old saves/local games. */
+  remaining_ms?: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -278,9 +282,28 @@ export function actionNotAllowedReason(
 }
 
 // ---------------------------------------------------------------------------
-// Turn timeout: `claimant` wins if it is the opponent's turn and they have been
-// idle for longer than TURN_TIMEOUT_MS. Throws when the claim is not valid yet.
+// Game clock: settle only the active player's elapsed thinking time at the server timestamp.
 // ---------------------------------------------------------------------------
+export function remainingTime(s: GameState, seat: number, updatedAt: number, now: number): number {
+  const balance = s.remaining_ms?.[seat] ?? GAME_TIME_MS;
+  return Math.max(0, balance - (s.status === "playing" && s.current_turn === seat ? Math.max(0, now - updatedAt) : 0));
+}
+
+export function settleClock(s: GameState, updatedAt: number, now: number): GameState {
+  return { ...s, remaining_ms: [0, 1].map(seat => remainingTime(s, seat, updatedAt, now)) };
+}
+
+/** Validate, debit the active clock and apply an action. An expired player cannot move to escape timeout. */
+export function applyTimedAction(s: GameState, pi: number, action: Parameters<typeof applyAction>[2], updatedAt: number, now: number): GameState {
+  const reason = actionNotAllowedReason(s, pi, action);
+  if (reason) throw new Error(reason);
+  const timed = settleClock(s, updatedAt, now);
+  if (timed.remaining_ms![s.current_turn] === 0) {
+    return { ...timed, status: "finished", winner: 1 - s.current_turn };
+  }
+  return applyAction(timed, pi, action);
+}
+
 export function claimTimeout(
   s: GameState,
   claimant: number,
@@ -289,8 +312,9 @@ export function claimTimeout(
 ): GameState {
   if (s.status !== "playing") throw new Error("Match is not in progress");
   if (s.current_turn === claimant) throw new Error("It is your turn");
-  if (now - lastMoveAt < TURN_TIMEOUT_MS) throw new Error("Opponent still has time");
-  return { ...s, status: "finished", winner: claimant };
+  const timed = settleClock(s, lastMoveAt, now);
+  if (timed.remaining_ms![s.current_turn] > 0) throw new Error("Opponent still has time");
+  return { ...timed, status: "finished", winner: claimant };
 }
 
 // ---------------------------------------------------------------------------
@@ -306,5 +330,6 @@ export function initialState(firstTurn: 0 | 1): GameState {
     current_turn: firstTurn,
     status: "playing",
     winner: null,
+    remaining_ms: [GAME_TIME_MS, GAME_TIME_MS],
   };
 }

@@ -3,7 +3,8 @@ import { type MatchRow, claimTimeout, getRematchRoom, getRoom, requestRematch, s
 import { ApiError, client } from "../lib/supabase.ts";
 import { deriveStats, type GameController, type WallRef } from "./controller.ts";
 import { describe, type MoveRecord } from "./history.ts";
-import { type Action, type GameState, getValidMoves, isWallValid, TURN_TIMEOUT_MS } from "./rules.ts";
+import { type Action, type GameState, getValidMoves, isWallValid, apply } from "./rules.ts";
+import { remainingTime, settleClock } from "../shared/quoridor.ts";
 import { play } from "./sound.ts";
 
 interface Match { state: GameState; revision: number; updatedAt: number | null }
@@ -18,6 +19,8 @@ export function useOnlineGame(
   roomId: string, me: number, initial: MatchRow, opponentName: string, onEnterRoom: (roomId: string) => void,
 ): GameController {
   const ref = useRef<Match>(toMatch(initial));
+  const pending = useRef(false);
+  const [prediction, setPrediction] = useState<Match | null>(null);
   const [match, setMatch] = useState<Match>(ref.current);
   const [history, setHistory] = useState<MoveRecord[]>([]);
   const [busy, setBusy] = useState(false);
@@ -38,6 +41,8 @@ export function useOnlineGame(
     const rec = row.revision === prev.revision + 1 ? describe(prev.state, row.state) : null;
     ref.current = toMatch(row);
     setMatch(ref.current);
+    setPrediction(null);
+    setNow(Date.now());
     if (rec) setHistory((h) => [...h, rec]);
     setPreview(null);
     if (row.state.status === "finished") {
@@ -68,7 +73,7 @@ export function useOnlineGame(
     return () => { void c.removeChannel(channel); };
   }, [roomId, applyRow]);
 
-  // A one-second clock for the idle-turn countdown, and a slow poll as a fallback in case realtime dropped.
+  // A one-second clock for the cumulative game countdown, and a slow poll as a fallback in case realtime dropped.
   const status = match.state.status;
   useEffect(() => {
     if (status === "finished") return;
@@ -93,22 +98,41 @@ export function useOnlineGame(
     return () => clearTimeout(t);
   }, [notice]);
 
-  const game = match.state;
+  const displayed = prediction ?? match;
+  const game = displayed.state;
   const myTurn = game.status === "playing" && game.current_turn === me;
   const validMoves = useMemo(() => (myTurn && !busy ? getValidMoves(game, me) : []), [game, myTurn, busy, me]);
 
   const submit = useCallback(async (action: Action | { type: "resign" }) => {
+    if (pending.current || ref.current.state.status !== "playing") return;
+    pending.current = true;
+    const base = ref.current;
+    const at = Date.now();
+    // Predict the board immediately with the same rules; only confirmed rows advance revision/history/results.
+    if (action.type !== "resign") {
+      const predicted = apply(settleClock(base.state, base.updatedAt ?? at, at), me, action);
+      if (!predicted) { pending.current = false; return; }
+      setPrediction({ state: predicted, revision: base.revision, updatedAt: at });
+      setPreview(null);
+      setNow(at);
+    }
     setBusy(true);
     try {
-      await submitAction(roomId, ref.current.revision, action);
-      await refresh();
+      const result = await submitAction(roomId, base.revision, action);
+      applyRow(result.match);
     } catch (e) {
-      if (e instanceof ApiError && e.isStale) { await refresh(); setNotice("The board changed — try again."); }
-      else setNotice(e instanceof ApiError ? e.message : "Something went wrong. Try again.");
+      // A lost response may still have committed. Resync for every error before rolling back the prediction.
+      await refresh();
+      if (ref.current.revision === base.revision) {
+        setNotice(e instanceof ApiError && e.isStale ? "The board changed — try again."
+          : e instanceof ApiError ? e.message : "Something went wrong. Try again.");
+      }
     } finally {
+      pending.current = false;
+      setPrediction(null);
       setBusy(false);
     }
-  }, [roomId, refresh]);
+  }, [roomId, refresh, me, applyRow]);
 
   const flashInvalid = (w: WallRef) => {
     setInvalid((i) => ({ ...w, tick: (i?.tick ?? 0) + 1 }));
@@ -137,12 +161,16 @@ export function useOnlineGame(
   };
   const resign = () => { void submit({ type: "resign" }); };
 
-  const secondsLeft = game.status === "playing" && match.updatedAt
-    ? Math.max(0, Math.ceil((TURN_TIMEOUT_MS - (now - match.updatedAt)) / 1000)) : null;
+  const secondsLeft = game.status === "playing" && displayed.updatedAt !== null
+    ? Math.ceil(remainingTime(game, game.current_turn, displayed.updatedAt, now) / 1000) : null;
   const claim = () => {
+    if (pending.current) return;
+    pending.current = true;
     setBusy(true);
-    claimTimeout(roomId).then(refresh).catch((e) => setNotice(e instanceof ApiError ? e.message : "Could not claim the win."))
-      .finally(() => setBusy(false));
+    claimTimeout(roomId).then((result) => applyRow(result.match)).catch(async (e) => {
+      await refresh();
+      setNotice(e instanceof ApiError ? e.message : "Could not claim the win.");
+    }).finally(() => { pending.current = false; setBusy(false); });
   };
 
   const goRematch = () => {
@@ -158,7 +186,7 @@ export function useOnlineGame(
     nameOf: (seat: number) => (seat === me ? "You" : opponentName),
     rematch: { ready: rematchReady, busy: rematchBusy, go: goRematch },
     opponentTitle: opponentName, opponentName,
-    history, validMoves, myTurn, finished: game.status === "finished", won: game.winner === me,
+    history, validMoves, myTurn, finished: match.state.status === "finished", won: match.state.winner === me,
     statusText: !myTurn && game.status === "playing" ? `Waiting for ${opponentName}…` : null,
     wallHorizontal, setWallHorizontal, preview, invalid, notice, busy,
     ...stats,

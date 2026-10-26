@@ -35,8 +35,8 @@ export const createRoom = () => call<{ room_id: string; code: string }>("create-
 export const joinRoom = (code: string) => call<{ room_id: string; player_index: number; status: string }>("join-room", { body: { code: code.trim().toUpperCase() } });
 export const getRoom = (roomId: string) => call<RoomInfo>(`get-room?room_id=${encodeURIComponent(roomId)}`, { method: "GET" });
 export const submitAction = (roomId: string, revision: number, action: Action | { type: "resign" }) =>
-  call<{ ok: boolean }>("submit-action", { body: { room_id: roomId, revision, action } });
-export const claimTimeout = (roomId: string) => call<{ ok: boolean }>("claim-timeout", { body: { room_id: roomId } });
+  call<{ ok: boolean; match: MatchRow }>("submit-action", { body: { room_id: roomId, revision, action } });
+export const claimTimeout = (roomId: string) => call<{ ok: boolean; match: MatchRow }>("claim-timeout", { body: { room_id: roomId } });
 
 /** Name and photo of the player on the other side of a room, or null until someone has joined. */
 export const getOpponent = (roomId: string) =>
