@@ -184,11 +184,11 @@ describe("the board turned for the second player", () => {
 
 describe("the starting position is the same everywhere", () => {
   it("initialState() equals the literal the database uses for quick match and rematch (initial_match_state in the SQL)", () => {
-    // If you change this, change initial_match_state() in supabase/migrations/20241005000000_quickmatch_rematch.sql too.
+    // If you change this, change initial_match_state() in supabase/migrations/20261027000000_game_clocks.sql too.
     expect(initialState(0)).toEqual({
       players: [{ row: 8, col: 4, walls_left: 10 }, { row: 0, col: 4, walls_left: 10 }],
       walls: { horizontal: [], vertical: [] },
-      current_turn: 0, status: "playing", winner: null,
+      current_turn: 0, status: "playing", winner: null, remaining_ms: [120000, 120000],
     });
     expect(initialState(1).current_turn).toBe(1);
   });

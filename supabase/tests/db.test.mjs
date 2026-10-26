@@ -45,6 +45,11 @@ await db.exec(`
 const files = fs.readdirSync(migDir).filter((f) => f.endsWith(".sql")).sort();
 for (const f of files) {
   if (f > "20241002000000_profiles.sql" && f < "20241003000000") continue;
+  if (f === "20261027000000_game_clocks.sql") {
+    await db.exec(`INSERT INTO rooms (id, code) VALUES ('${id(9900)}', 'OLDCLOCK');
+      INSERT INTO matches (room_id, state, revision, updated_at) VALUES
+        ('${id(9900)}', '{"status":"playing","current_turn":1,"winner":null}', 8, '2026-10-27T00:00:00Z')`);
+  }
   try { await db.exec(fs.readFileSync(path.join(migDir, f), "utf8")); ok(true, `migration ${f} applies`); }
   catch (e) { ok(false, `migration ${f}: ${e.message}`); process.exit(1); }
   // seed the pre-existing user between migration 2 and 3 so the counter seeding is exercised
@@ -52,6 +57,15 @@ for (const f of files) {
     await db.exec(`INSERT INTO auth.users (id, is_anonymous) VALUES ('${id(901)}', true)`);
   }
 }
+
+// ---- game clock initialization and migration -------------------------------------------------
+const migratedClock = (await q(`SELECT state, revision, updated_at FROM matches WHERE room_id='${id(9900)}'`))[0];
+ok(canon(migratedClock.state.remaining_ms) === canon([120000, 120000]), "legacy matches receive game-wide clock balances");
+ok(migratedClock.revision === 8 && migratedClock.updated_at.toISOString() === "2026-10-27T00:00:00.000Z",
+  "clock migration preserves revision and current-turn timestamp");
+await db.exec(`DELETE FROM rooms WHERE id='${id(9900)}'`);
+const freshClocks = (await q("SELECT initial_match_state(1) AS state"))[0].state;
+ok(canon(freshClocks.remaining_ms) === canon([120000, 120000]), "SQL match factory includes fresh clocks");
 
 // ---- counters --------------------------------------------------------------------------------
 let r = (await q("SELECT total_users, games_played FROM meta_stats"))[0];
@@ -91,6 +105,15 @@ const room = async (n, u0, u1, state) => {
   return rid;
 };
 const playing = { status: "playing", winner: null, current_turn: 0 };
+// Older join-room servers also get clocks from the INSERT trigger.
+const legacyJoin = await room(99, id(1), id(2), playing);
+ok(canon((await q(`SELECT state FROM matches WHERE room_id='${legacyJoin}'`))[0].state.remaining_ms) === canon([120000, 120000]),
+  "legacy private-room creation initializes both clocks through the insert trigger");
+await db.exec(`UPDATE matches SET state = jsonb_set(state, '{remaining_ms}', '[45000,90000]') WHERE room_id='${legacyJoin}'`);
+ok(canon((await q(`SELECT state FROM matches WHERE room_id='${legacyJoin}'`))[0].state.remaining_ms) === canon([45000, 90000]),
+  "ordinary updates retain spent clock balances instead of reinitializing them");
+await db.exec(`DELETE FROM rooms WHERE id='${legacyJoin}'`);
+
 const finish = (rid, winner) => db.exec(`UPDATE matches SET state = '${JSON.stringify({ status: "finished", winner, current_turn: 0 })}', revision = revision + 1 WHERE room_id = '${rid}'`);
 const stats = async (u) => (await q(`SELECT games_played, wins, losses, online_wins, ai_wins FROM profiles WHERE id='${u}'`))[0];
 
@@ -177,7 +200,7 @@ ok(await denied(async () => { await db.exec("SET ROLE anon"); try { await db.exe
   await db.exec("UPDATE profiles SET last_seen = now() WHERE id IN (" + [11, 12, 13, 14, 15, 16, 17, 18].map((n) => `'${id(n)}'`).join(",") + ")");
   const qm = async (n) => (await as(id(n), "SELECT quick_match() AS r")).rows[0].r;
   const members = async (rid) => q(`SELECT player_id, player_index FROM room_members WHERE room_id='${rid}' ORDER BY player_index`);
-  const expectedStart = (turn) => ({ players: [{ row: 8, col: 4, walls_left: 10 }, { row: 0, col: 4, walls_left: 10 }], walls: { horizontal: [], vertical: [] }, current_turn: turn, status: "playing", winner: null });
+  const expectedStart = (turn) => ({ players: [{ row: 8, col: 4, walls_left: 10 }, { row: 0, col: 4, walls_left: 10 }], walls: { horizontal: [], vertical: [] }, current_turn: turn, status: "playing", winner: null, remaining_ms: [120000, 120000] });
 
   const w1 = await qm(11);
   ok(w1.status === "waiting" && w1.player_index === 0 && /^[A-HJ-NP-Z2-9]{8}$/.test(w1.code), `with nobody waiting you open a public room: ${w1.code}`);
@@ -264,7 +287,7 @@ ok(await denied(async () => { await db.exec("SET ROLE anon"); try { await db.exe
   const nm = await q(`SELECT player_id, player_index FROM room_members WHERE room_id = '${nr}' ORDER BY player_index`);
   ok(nm.length === 2 && nm[0].player_id === id(12) && nm[1].player_id === id(11), "seats are swapped: the previous second player is now first");
   const newMatch = (await q(`SELECT state, revision FROM matches WHERE room_id='${nr}'`))[0];
-  ok(newMatch.revision === 0 && canon(newMatch.state) === canon({ players: [{ row: 8, col: 4, walls_left: 10 }, { row: 0, col: 4, walls_left: 10 }], walls: { horizontal: [], vertical: [] }, current_turn: 0, status: "playing", winner: null }),
+  ok(newMatch.revision === 0 && canon(newMatch.state) === canon({ players: [{ row: 8, col: 4, walls_left: 10 }, { row: 0, col: 4, walls_left: 10 }], walls: { horizontal: [], vertical: [] }, current_turn: 0, status: "playing", winner: null, remaining_ms: [120000, 120000] }),
     "the new match starts fresh from exactly the standard position, seat 0 to move");
   ok((await q(`SELECT rematch_room_id FROM matches WHERE room_id='${rid}'`))[0].rematch_room_id === nr, "the old match points at the new room (this is how the other player finds out)");
   ok((await rematch(12, rid)) === nr && (await rematch(11, rid)) === nr, "the other player (and repeats) get the SAME room: no duplicates");

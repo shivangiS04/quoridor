@@ -1,7 +1,7 @@
 # Quoridor
 
 Android Quoridor (Kotlin, Jetpack Compose, Hilt) with an online two-player mode backed by Supabase.
-Every online move is validated server-side by an edge function; clients only read state via Realtime.
+Every online move is validated server-side by an edge function; clients predict legal moves immediately and reconcile with the confirmed response or Realtime.
 
 ## Layout
 
@@ -40,7 +40,7 @@ Both run in CI (`.github/workflows/ci.yml`).
 
 - Every action is validated in `submit-action`; clients cannot write to `matches`.
 - A player may **resign** at any time.
-- A player idle for 2 minutes (`TURN_TIMEOUT_MS`) can be forfeited by the opponent via `claim-timeout`.
+- Each online player has 2 minutes of thinking time for the entire game (`GAME_TIME_MS`). Only the active player’s clock runs. The server stores both balances in `state.remaining_ms`, debits elapsed time before each action, and rejects play after expiry by finishing the game. The waiting player can also use `claim-timeout` when the active player’s balance reaches zero.
 - `cleanup-rooms` deletes rooms older than 24h. Set a secret and schedule it (e.g. hourly with pg_cron / a cron caller):
   ```sh
   supabase secrets set CLEANUP_SECRET=<random>
@@ -140,7 +140,7 @@ Status (everything below works in the browser):
     and cancelling removes your waiting room, so you are never paired with someone who left.
   - **Create room**: share the code or the link `/join/CODE` with a friend.
   - Real-time play; moves are validated by the server; the second player sees the board turned around so their own pawn is at the bottom.
-  - Resign any time, claim a win after 2 minutes of the opponent's inactivity, resume an unfinished game after a reload.
+  - Resign any time, claim a win when the opponent exhausts their total 2-minute game clock, resume an unfinished game after a reload.
   - **Rematch** with the same opponent, seats swapped (the player who moved second now moves first).
 - **Leaderboard** (top 10 by online wins) and live **"N online · X players joined"** counters.
 - **Install to home screen** (web app manifest and icons; iPhone: Share -> Add to Home Screen).
@@ -156,3 +156,23 @@ under **Supabase → Authentication → URL Configuration → Redirect URLs**, o
 
 `node e2e/smoke.mjs <url> shots` plays the computer and a pass-and-play game in a real browser and checks the install files. `node e2e/online.mjs <url> shots` runs **two browsers
 as two players against the real backend** (creates throw-away guests named "ZZ web … (delete me)"): moves, drag-and-drop walls on both boards, resign, **rematch**, stats, leaderboard, counters, **quick match** and cancelling a search. Run it deliberately.
+
+### Online action and clock regression checks
+
+The online browser regression uses two isolated browser sessions and a deterministic mock API/Realtime transport.
+It runs the real React hook, game screen and rules with a delayed 1.5-second response, and checks immediate pawn/wall
+rendering, duplicate-input suppression, confirmation races, rollback, lost responses, cumulative clocks and confirmed results.
+It does not create accounts or modify a live Supabase project.
+
+```sh
+cd web
+npm run dev -- --host 127.0.0.1 --port 5173
+# In a second terminal (set CHROME to your Chrome/Chromium executable on Linux):
+node e2e/online-regression.mjs http://127.0.0.1:5173
+```
+
+Deploy the clock migration with `supabase db push`, then deploy `submit-action` and `claim-timeout` before shipping the
+updated web/Android clients: successful action responses now include the confirmed match, avoiding another fetch.
+Rooms, quick matches and rematches all initialize independent 120,000 ms balances. Existing matches receive initial balances
+at rollout; earlier thinking time cannot be reconstructed because per-move timestamps were not stored. The current turn
+still runs from its existing `updated_at`. This change does not deploy or alter the live backend automatically.

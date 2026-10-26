@@ -38,6 +38,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import com.blockade.quoridor.data.remote.dto.ClaimTimeoutRequest
+import com.blockade.quoridor.data.remote.dto.MatchActionResponse
 import com.blockade.quoridor.data.remote.dto.MatchPayload
 import com.blockade.quoridor.data.remote.dto.SubmitResignRequest
 import java.time.OffsetDateTime
@@ -113,31 +114,34 @@ class GameRepository @Inject constructor(
         )
     }
 
-    suspend fun submitMove(roomId: String, revision: Int, row: Int, col: Int) {
-        call {
+    suspend fun submitMove(roomId: String, revision: Int, row: Int, col: Int): MatchSnapshot {
+        return actionSnapshot(call {
             client.functions.invoke(
                 "submit-action",
                 SubmitMoveRequest(roomId, revision, MoveAction(row = row, col = col)),
             )
-        }
+        })
     }
 
-    suspend fun submitWall(roomId: String, revision: Int, row: Int, col: Int, horizontal: Boolean) {
-        call {
+    suspend fun submitWall(roomId: String, revision: Int, row: Int, col: Int, horizontal: Boolean): MatchSnapshot {
+        return actionSnapshot(call {
             client.functions.invoke(
                 "submit-action",
                 SubmitWallRequest(roomId, revision, WallAction(row = row, col = col, horizontal = horizontal)),
             )
-        }
+        })
     }
 
-    suspend fun resign(roomId: String, revision: Int) {
-        call { client.functions.invoke("submit-action", SubmitResignRequest(roomId, revision)) }
+    suspend fun resign(roomId: String, revision: Int): MatchSnapshot {
+        return actionSnapshot(call { client.functions.invoke("submit-action", SubmitResignRequest(roomId, revision)) })
     }
 
-    suspend fun claimTimeout(roomId: String) {
-        call { client.functions.invoke("claim-timeout", ClaimTimeoutRequest(roomId)) }
+    suspend fun claimTimeout(roomId: String): MatchSnapshot {
+        return actionSnapshot(call { client.functions.invoke("claim-timeout", ClaimTimeoutRequest(roomId)) })
     }
+
+    private fun actionSnapshot(body: String): MatchSnapshot =
+        snapshotOf(json.decodeFromString<MatchActionResponse>(body).match)
 
     /** Emits every match row change. The match row is INSERTed when the second player joins, then UPDATEd per move. */
     fun observeMatch(roomId: String): Flow<MatchSnapshot> = flow {

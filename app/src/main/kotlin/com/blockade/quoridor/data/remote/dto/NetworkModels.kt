@@ -77,3 +77,6 @@ data class SubmitResignRequest(
 data class ClaimTimeoutRequest(
     @SerialName("room_id") val roomId: String,
 )
+
+@Serializable
+data class MatchActionResponse(val match: MatchPayload)

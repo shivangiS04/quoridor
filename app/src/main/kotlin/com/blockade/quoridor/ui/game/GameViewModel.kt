@@ -9,6 +9,7 @@ import com.blockade.quoridor.domain.ai.AiDifficulty
 import com.blockade.quoridor.domain.ai.QuoridorAi
 import com.blockade.quoridor.domain.model.GameState
 import com.blockade.quoridor.domain.model.MatchSnapshot
+import com.blockade.quoridor.domain.rules.GameClock
 import com.blockade.quoridor.domain.rules.MoveHistory
 import com.blockade.quoridor.domain.rules.MoveRecord
 import com.blockade.quoridor.domain.rules.PlacedWall
@@ -71,7 +72,8 @@ data class GameUiState(
     val secondsLeft: Long? get() {
         val last = snapshot?.updatedAtMs ?: return null
         if (gameState?.status != "playing") return null
-        val left = QuoridorRules.TURN_TIMEOUT_MS - (nowMs - last)
+        val gs = gameState ?: return null
+        val left = GameClock.remaining(gs, gs.currentTurn, last, nowMs)
         return (left.coerceAtLeast(0) + 999) / 1000
     }
     val canClaimTimeout: Boolean get() = !isMyTurn && gameState?.status == "playing" && secondsLeft == 0L
@@ -92,6 +94,7 @@ class GameViewModel @Inject constructor(
     val state = _state.asStateFlow()
 
     private var roomId: String? = null
+    private var confirmedSnapshot: MatchSnapshot? = null
 
     // Single-player: set when playing the computer; the human is always player 0 and moves first.
     private var ai: QuoridorAi? = null
@@ -113,6 +116,7 @@ class GameViewModel @Inject constructor(
     /** Starts a fresh game against the same computer opponent (the "Play Again" button). */
     fun restartLocal() {
         if (!isLocal) return
+        confirmedSnapshot = null
         _state.update { GameUiState(myPlayerIndex = 0, soundOn = it.soundOn, vsComputer = true, opponentLabel = it.opponentLabel) }
         updateSnapshot(MatchSnapshot(QuoridorRules.initialState(firstTurn = 0), revision = 0))
     }
@@ -168,12 +172,13 @@ class GameViewModel @Inject constructor(
     }
 
     private fun updateSnapshot(snap: MatchSnapshot) {
+        val previous = confirmedSnapshot
+        if (previous != null && snap.revision <= previous.revision) return
+        confirmedSnapshot = snap
         var effect: Sfx? = null
         _state.update { s ->
-            // Ignore stale/duplicate deliveries (refresh and realtime can race).
-            if (s.snapshot != null && snap.revision <= s.snapshot.revision) return@update s
             // Only diff consecutive revisions; after a gap the history simply skips the missed moves.
-            val record = s.snapshot
+            val record = previous
                 ?.takeIf { snap.revision == it.revision + 1 }
                 ?.let { MoveHistory.describe(it.state, snap.state) }
             effect = when {
@@ -247,13 +252,13 @@ class GameViewModel @Inject constructor(
 
     private fun submitMove(roomId: String, row: Int, col: Int) {
         if (isLocal) return applyLocal(_state.value.myPlayerIndex, QuoridorRules.Action.Move(row, col))
-        submit(roomId) { rev -> repo.submitMove(roomId, rev, row, col) }
+        submit(roomId, QuoridorRules.Action.Move(row, col)) { rev -> repo.submitMove(roomId, rev, row, col) }
     }
 
     private fun submitWall(roomId: String, wr: Int, wc: Int, horizontal: Boolean) {
         _state.update { it.copy(wallPreview = null) }
         if (isLocal) return applyLocal(_state.value.myPlayerIndex, QuoridorRules.Action.Wall(wr, wc, horizontal))
-        submit(roomId) { rev -> repo.submitWall(roomId, rev, wr, wc, horizontal) }
+        submit(roomId, QuoridorRules.Action.Wall(wr, wc, horizontal)) { rev -> repo.submitWall(roomId, rev, wr, wc, horizontal) }
     }
 
     fun clearError() = _state.update { it.copy(error = null) }
@@ -281,15 +286,41 @@ class GameViewModel @Inject constructor(
         }
     }
 
-    private fun submit(roomId: String, call: suspend (revision: Int) -> Unit) = viewModelScope.launch {
-        val rev = _state.value.snapshot?.revision ?: return@launch
-        _state.update { it.copy(submitting = true) }
-        try {
-            call(rev)
-        } catch (e: GameException) {
-            if (e.isStale) refresh(roomId)
-            _state.update { it.copy(error = if (e.isStale) "The board changed — try again." else e.message) }
+    private fun submit(
+        roomId: String,
+        prediction: QuoridorRules.Action? = null,
+        call: suspend (revision: Int) -> MatchSnapshot,
+    ) = viewModelScope.launch {
+        if (_state.value.submitting) return@launch
+        val base = confirmedSnapshot ?: return@launch
+        val now = System.currentTimeMillis()
+        val predicted = prediction?.let {
+            QuoridorRules.apply(GameClock.settle(base.state, base.updatedAtMs ?: now, now), _state.value.myPlayerIndex, it)
         }
-        _state.update { it.copy(submitting = false) }
+        _state.update { s -> s.copy(
+            submitting = true,
+            // Results and history are published only after server confirmation.
+            snapshot = predicted?.let { base.copy(state = it.copy(status = "playing", winner = null), updatedAtMs = now) } ?: s.snapshot,
+            validMoves = if (predicted != null) emptyList() else s.validMoves,
+            wallPreview = null,
+        ) }
+        try {
+            updateSnapshot(call(base.revision))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A dropped response can still mean the move committed. Resync on every failure.
+            refresh(roomId)
+            if (confirmedSnapshot?.revision == base.revision) {
+                _state.update { it.copy(error = if (e is GameException && e.isStale) "The board changed — try again." else e.message) }
+            }
+        } finally {
+            val confirmed = confirmedSnapshot
+            _state.update { s -> s.copy(
+                submitting = false, snapshot = confirmed,
+                validMoves = confirmed?.state?.takeIf { it.status == "playing" && it.currentTurn == s.myPlayerIndex }
+                    ?.let { QuoridorRules.getValidMoves(it, s.myPlayerIndex) } ?: emptyList(),
+            ) }
+        }
     }
 }

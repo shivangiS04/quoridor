@@ -43,7 +43,7 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - run: deno fmt --check supabase/functions/_shared/quoridor_test.ts
+      - run: deno fmt --check supabase/functions/_shared/*_test.ts
       - run: deno check supabase/functions/*/index.ts
       - run: deno test supabase/functions
 
@@ -84,6 +84,11 @@ jobs:
           npx vite preview --port 4173 --host 127.0.0.1 &
           npx --yes wait-on http://127.0.0.1:4173
           CHROME="$(which google-chrome)" node e2e/smoke.mjs http://127.0.0.1:4173 shots
+      - name: Online latency and game-clock regression (mock transport, real browser)
+        run: |
+          npx vite --port 5173 --host 127.0.0.1 &
+          npx --yes wait-on http://127.0.0.1:5173
+          CHROME="$(which google-chrome)" node e2e/online-regression.mjs http://127.0.0.1:5173
       - uses: actions/upload-artifact@v4
         if: always()
         with:

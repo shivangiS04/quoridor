@@ -50,7 +50,7 @@ export interface GameController {
   resign: () => void;
   /** Local games only. */
   playAgain?: () => void;
-  /** Online games only: the idle-turn countdown and the claim-win button. */
+  /** Online games only: the active player’s remaining game time and the claim-win button. */
   timer?: { secondsLeft: number | null; canClaim: boolean; claim: () => void };
 }
 
